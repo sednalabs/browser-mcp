@@ -30,7 +30,10 @@ impl WorkerProcess {
             .kill_on_drop(true);
         if config.isolate_browser_environment {
             for (key, _) in std::env::vars_os() {
-                if key.to_str().is_some_and(|name| name.starts_with("SEDNA_BROWSER_")) {
+                if key
+                    .to_str()
+                    .is_some_and(|name| name.starts_with("SEDNA_BROWSER_"))
+                {
                     command.env_remove(key);
                 }
             }
@@ -161,7 +164,10 @@ impl WorkerProcess {
         self.stdin.take();
         match timeout(Duration::from_secs(35), self.child.wait()).await {
             Ok(Ok(status)) if status.success() => Ok(()),
-            Ok(Ok(_)) => Err("Worker exited unsuccessfully during cleanup; browser cleanup is unconfirmed.".into()),
+            Ok(Ok(_)) => Err(
+                "Worker exited unsuccessfully during cleanup; browser cleanup is unconfirmed."
+                    .into(),
+            ),
             _ => self.terminate().await,
         }
     }
@@ -195,7 +201,10 @@ impl WorkerProcess {
         let _ = self.child.start_kill();
         match timeout(Duration::from_secs(5), self.child.wait()).await {
             Ok(Ok(_)) => Ok(()),
-            _ => Err("Worker termination could not be confirmed; its capacity must remain quarantined.".into()),
+            _ => Err(
+                "Worker termination could not be confirmed; its capacity must remain quarantined."
+                    .into(),
+            ),
         }
     }
 }

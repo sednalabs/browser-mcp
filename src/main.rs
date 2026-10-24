@@ -44,10 +44,18 @@ async fn run() -> Result<(), String> {
                     .map_err(|_| "--timeout must be an integer")?
             }
             Some("--transport") => {
-                transport = args.next().ok_or("--transport requires stdio or http")?.into_string().map_err(|_| "Invalid transport")?;
-                if !["stdio", "http"].contains(&transport.as_str()) { return Err("--transport requires stdio or http".into()); }
+                transport = args
+                    .next()
+                    .ok_or("--transport requires stdio or http")?
+                    .into_string()
+                    .map_err(|_| "Invalid transport")?;
+                if !["stdio", "http"].contains(&transport.as_str()) {
+                    return Err("--transport requires stdio or http".into());
+                }
             }
-            Some("--http-config") => http_config = Some(args.next().ok_or("--http-config requires a file")?.into()),
+            Some("--http-config") => {
+                http_config = Some(args.next().ok_or("--http-config requires a file")?.into())
+            }
             Some("--check") => mode = "check",
             Some("--print-tools") => mode = "tools",
             Some("--print-tool-schema") => mode = "schema",
@@ -62,10 +70,16 @@ async fn run() -> Result<(), String> {
     if mode == "tools" || mode == "schema" {
         let tools = if transport == "http" {
             #[cfg(feature = "http")]
-            { sedna_browser_mcp::http::tool_definitions()? }
+            {
+                sedna_browser_mcp::http::tool_definitions()?
+            }
             #[cfg(not(feature = "http"))]
-            { return Err("Build with the http feature to advertise HTTP tools.".into()); }
-        } else { tool_definitions()? };
+            {
+                return Err("Build with the http feature to advertise HTTP tools.".into());
+            }
+        } else {
+            tool_definitions()?
+        };
         if mode == "tools" {
             for tool in tools {
                 println!("{}", tool.name);
@@ -80,22 +94,33 @@ async fn run() -> Result<(), String> {
     }
     let worker_config = WorkerConfig::resolve(worker, node, timeout)?;
     if transport == "http" {
-        if mode != "serve" { return Err("--check is stdio-only; use /healthz and an authenticated browser_observe for HTTP readiness.".into()); }
+        if mode != "serve" {
+            return Err("--check is stdio-only; use /healthz and an authenticated browser_observe for HTTP readiness.".into());
+        }
         #[cfg(feature = "http")]
         {
-            let path = http_config.ok_or("--http-config is required for HTTP; unauthenticated HTTP is not supported.")?;
+            let path = http_config.ok_or(
+                "--http-config is required for HTTP; unauthenticated HTTP is not supported.",
+            )?;
             let config = sedna_browser_mcp::http::config::HttpConfig::load(&path)?;
             let stop = CancellationToken::new();
             let signal_stop = stop.clone();
-            let signal = tokio::spawn(async move { shutdown_signal().await; signal_stop.cancel(); });
+            let signal = tokio::spawn(async move {
+                shutdown_signal().await;
+                signal_stop.cancel();
+            });
             let result = sedna_browser_mcp::http::serve(worker_config, config, stop).await;
             signal.abort();
             return result;
         }
         #[cfg(not(feature = "http"))]
-        { return Err("This binary was built without the http feature.".into()); }
+        {
+            return Err("This binary was built without the http feature.".into());
+        }
     }
-    if http_config.is_some() { return Err("--http-config requires --transport http.".into()); }
+    if http_config.is_some() {
+        return Err("--http-config requires --transport http.".into());
+    }
     let client = WorkerClient::new(worker_config);
     let outcome = if mode == "check" {
         match client

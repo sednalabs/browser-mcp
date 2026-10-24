@@ -48,7 +48,10 @@ impl WorkerClient {
             sender,
             next_id: AtomicU64::new(1),
             shutdown,
-            actor: Mutex::new(Supervision { handle: Some(actor), outcome: None }),
+            actor: Mutex::new(Supervision {
+                handle: Some(actor),
+                outcome: None,
+            }),
         }))
     }
 
@@ -101,17 +104,23 @@ impl WorkerClient {
         // shutdown waiter must not detach it or turn a later join into false
         // success. Concurrent lease expiry/server shutdown share this outcome.
         let mut state = self.0.actor.lock().await;
-        if let Some(outcome) = &state.outcome { return outcome.clone(); }
+        if let Some(outcome) = &state.outcome {
+            return outcome.clone();
+        }
         let outcome = if let Some(actor) = state.handle.as_mut() {
             match tokio::time::timeout(Duration::from_secs(75), &mut *actor).await {
-                Ok(result) => result.map_err(|error| format!("browser worker supervisor failed: {error}")).and_then(|outcome| outcome),
+                Ok(result) => result
+                    .map_err(|error| format!("browser worker supervisor failed: {error}"))
+                    .and_then(|outcome| outcome),
                 Err(_) => {
                     actor.abort();
                     let _ = actor.await;
                     Err("browser worker cleanup exceeded 75 seconds; forced process cleanup was requested".into())
                 }
             }
-        } else { Ok(()) };
+        } else {
+            Ok(())
+        };
         state.handle = None;
         state.outcome = Some(outcome.clone());
         outcome
@@ -195,5 +204,8 @@ async fn run_actor(
             cleanup_error = Some(error);
         }
     }
-    match cleanup_error { Some(error) => Err(error), None => Ok(()) }
+    match cleanup_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }

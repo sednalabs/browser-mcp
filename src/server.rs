@@ -33,7 +33,10 @@ pub struct BrowserServer {
 impl BrowserServer {
     #[cfg(feature = "http")]
     pub(crate) fn new_http(authority: Arc<crate::http::BrowserAuthority>) -> Result<Self, String> {
-        Ok(Self { backend: Backend::Http(authority), tools: Arc::new(crate::http::tool_definitions()?) })
+        Ok(Self {
+            backend: Backend::Http(authority),
+            tools: Arc::new(crate::http::tool_definitions()?),
+        })
     }
 
     pub fn new(worker: WorkerClient) -> Result<Self, String> {
@@ -55,10 +58,15 @@ impl ServerHandler for BrowserServer {
         let instructions = match &self.backend {
             Backend::Stdio(_) => INSTRUCTIONS.to_string(),
             #[cfg(feature = "http")]
-            Backend::Http(_) => format!("{INSTRUCTIONS} HTTP requires browser_session action create first, then browser_session_id on each call. Use list to reconcile a lost create response; never assume a reconnected HTTP request is the same browser."),
+            Backend::Http(_) => format!(
+                "{INSTRUCTIONS} HTTP requires browser_session action create first, then browser_session_id on each call. Use list to reconcile a lost create response; never assume a reconnected HTTP request is the same browser."
+            ),
         };
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("sedna-browser-mcp", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new(
+                "sedna-browser-mcp",
+                env!("CARGO_PKG_VERSION"),
+            ))
             .with_instructions(instructions)
     }
 
@@ -99,14 +107,32 @@ impl ServerHandler for BrowserServer {
         }
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let value = match &self.backend {
-            Backend::Stdio(worker) => worker.call(request.name.to_string(), arguments, context.ct).await,
+            Backend::Stdio(worker) => {
+                worker
+                    .call(request.name.to_string(), arguments, context.ct)
+                    .await
+            }
             #[cfg(feature = "http")]
             Backend::Http(authority) => {
-                let principal = context.extensions.get::<::http::request::Parts>()
-                    .and_then(|parts| parts.extensions.get::<crate::http::RequestPrincipal>()).cloned();
+                let principal = context
+                    .extensions
+                    .get::<::http::request::Parts>()
+                    .and_then(|parts| parts.extensions.get::<crate::http::RequestPrincipal>())
+                    .cloned();
                 match principal {
-                    Some(principal) => authority.dispatch(principal.owner(), request.name.as_ref(), arguments, context.ct).await,
-                    None => Err("Verified HTTP caller context is missing; nothing was dispatched.".into()),
+                    Some(principal) => {
+                        authority
+                            .dispatch(
+                                principal.owner(),
+                                request.name.as_ref(),
+                                arguments,
+                                context.ct,
+                            )
+                            .await
+                    }
+                    None => Err(
+                        "Verified HTTP caller context is missing; nothing was dispatched.".into(),
+                    ),
                 }
             }
         };

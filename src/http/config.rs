@@ -1,6 +1,10 @@
 //! Operator-only HTTP configuration. Never deserialize this from a tool call.
 use serde::Deserialize;
-use std::{collections::HashSet, net::{IpAddr, SocketAddr}, path::{Path, PathBuf}};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, SocketAddr},
+    path::{Path, PathBuf},
+};
 use url::Url;
 
 #[derive(Clone, Deserialize)]
@@ -39,7 +43,9 @@ pub struct AuthSettings {
     #[serde(default = "default_scopes")]
     pub required_scopes: Vec<String>,
 }
-fn default_scopes() -> Vec<String> { vec!["browser:use".into()] }
+fn default_scopes() -> Vec<String> {
+    vec!["browser:use".into()]
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -54,9 +60,15 @@ pub struct Limits {
 }
 impl Default for Limits {
     fn default() -> Self {
-        Self { max_browsers: 16, max_browsers_per_owner: 4, idle_seconds: 1800,
-            lifetime_seconds: 86400, max_http_requests: 32, max_legacy_sessions: 64,
-            max_request_bytes: 128 * 1024 }
+        Self {
+            max_browsers: 16,
+            max_browsers_per_owner: 4,
+            idle_seconds: 1800,
+            lifetime_seconds: 86400,
+            max_http_requests: 32,
+            max_legacy_sessions: 64,
+            max_request_bytes: 128 * 1024,
+        }
     }
 }
 impl Limits {
@@ -69,7 +81,8 @@ impl Limits {
             || !(1..=86400).contains(&self.idle_seconds)
             || self.lifetime_seconds < self.idle_seconds
             || self.lifetime_seconds > 604800
-            || !(1024..=128 * 1024).contains(&self.max_request_bytes) {
+            || !(1024..=128 * 1024).contains(&self.max_request_bytes)
+        {
             return Err("Invalid HTTP/browser limits; consult docs/http.md.".into());
         }
         Ok(())
@@ -77,28 +90,42 @@ impl Limits {
 }
 
 pub fn read_operator_file(path: &Path, maximum: u64, secret: bool) -> Result<Vec<u8>, String> {
-    let metadata = std::fs::symlink_metadata(path).map_err(|e| format!("Cannot inspect operator file: {e}"))?;
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("Cannot inspect operator file: {e}"))?;
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > maximum {
         return Err("Operator file must be a bounded regular file, not a symlink.".into());
     }
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::PermissionsExt;
         let forbidden = if secret { 0o077 } else { 0o022 };
         if metadata.permissions().mode() & forbidden != 0 {
-            return Err("Operator file permissions are too broad; use 0600 for secrets and configuration.".into());
+            return Err(
+                "Operator file permissions are too broad; use 0600 for secrets and configuration."
+                    .into(),
+            );
         }
     }
     use std::io::Read;
     let file = std::fs::File::open(path).map_err(|e| format!("Cannot read operator file: {e}"))?;
     let mut bytes = Vec::new();
-    file.take(maximum + 1).read_to_end(&mut bytes).map_err(|e| format!("Cannot read operator file: {e}"))?;
-    if bytes.len() as u64 > maximum { return Err("Operator file grew beyond the configured bound.".into()); }
+    file.take(maximum + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Cannot read operator file: {e}"))?;
+    if bytes.len() as u64 > maximum {
+        return Err("Operator file grew beyond the configured bound.".into());
+    }
     Ok(bytes)
 }
 
 fn is_loopback(url: &Url) -> bool {
-    url.host_str().is_some_and(|host| host == "localhost" ||
-        host.trim_matches(['[', ']']).parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()))
+    url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    })
 }
 pub fn validate_endpoint(raw: &str, allow_local: bool) -> Result<Url, String> {
     let url = Url::parse(raw).map_err(|_| "Invalid endpoint URL")?;
@@ -106,18 +133,36 @@ pub fn validate_endpoint(raw: &str, allow_local: bool) -> Result<Url, String> {
         return Err("Endpoint URLs must not contain credentials or fragments.".into());
     }
     if url.scheme() != "https" && !(allow_local && url.scheme() == "http" && is_loopback(&url)) {
-        return Err("Endpoints require HTTPS; explicit loopback HTTP is the sole development exception.".into());
+        return Err(
+            "Endpoints require HTTPS; explicit loopback HTTP is the sole development exception."
+                .into(),
+        );
     }
     Ok(url)
 }
 impl HttpConfig {
     pub fn load(path: &Path) -> Result<Self, String> {
         let bytes = read_operator_file(path, 65536, false)?;
-        let mut value: Self = serde_json::from_slice(&bytes).map_err(|e| format!("Invalid HTTP configuration: {e}"))?;
-        let base = path.canonicalize().map_err(|e| e.to_string())?.parent().ok_or("Configuration has no parent")?.to_path_buf();
-        let absolute = |p: &mut PathBuf| { if p.is_relative() { *p = base.join(&*p); } };
-        if let Some(browser) = &mut value.browser_config { absolute(browser); }
-        if let Some(tls) = &mut value.tls { absolute(&mut tls.certificate); absolute(&mut tls.private_key); }
+        let mut value: Self = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("Invalid HTTP configuration: {e}"))?;
+        let base = path
+            .canonicalize()
+            .map_err(|e| e.to_string())?
+            .parent()
+            .ok_or("Configuration has no parent")?
+            .to_path_buf();
+        let absolute = |p: &mut PathBuf| {
+            if p.is_relative() {
+                *p = base.join(&*p);
+            }
+        };
+        if let Some(browser) = &mut value.browser_config {
+            absolute(browser);
+        }
+        if let Some(tls) = &mut value.tls {
+            absolute(&mut tls.certificate);
+            absolute(&mut tls.private_key);
+        }
         value.validate()?;
         Ok(value)
     }
@@ -125,26 +170,52 @@ impl HttpConfig {
         self.limits.validate()?;
         let resource = validate_endpoint(&self.resource_url, self.allow_loopback_http)?;
         if resource.path() != "/mcp" || resource.query().is_some() {
-            return Err("resource_url must identify the exact /mcp endpoint, with no query.".into());
+            return Err(
+                "resource_url must identify the exact /mcp endpoint, with no query.".into(),
+            );
         }
         let issuer = validate_endpoint(&self.auth.issuer, self.allow_loopback_http)?;
-        if issuer.query().is_some() { return Err("issuer must not have a query.".into()); }
+        if issuer.query().is_some() {
+            return Err("issuer must not have a query.".into());
+        }
         if !self.bind.ip().is_loopback() && self.tls.is_none() {
             return Err("Non-loopback listeners require native TLS. A reverse proxy must reach a loopback listener.".into());
         }
-        if self.allowed_hosts.is_empty() || self.allowed_hosts.len() > 32 || self.allowed_hosts.iter().any(|h| h.is_empty() || h.contains('*') || h.contains('/')) {
+        if self.allowed_hosts.is_empty()
+            || self.allowed_hosts.len() > 32
+            || self
+                .allowed_hosts
+                .iter()
+                .any(|h| h.is_empty() || h.contains('*') || h.contains('/'))
+        {
             return Err("Set 1..32 explicit allowed_hosts without wildcards.".into());
         }
-        if self.allowed_origins.len() > 32 { return Err("Too many allowed_origins.".into()); }
+        if self.allowed_origins.len() > 32 {
+            return Err("Too many allowed_origins.".into());
+        }
         for raw in &self.allowed_origins {
             let origin = validate_endpoint(raw, self.allow_loopback_http)?;
-            if origin.origin().ascii_serialization() != *raw { return Err("allowed_origins must contain exact origins, without paths.".into()); }
+            if origin.origin().ascii_serialization() != *raw {
+                return Err("allowed_origins must contain exact origins, without paths.".into());
+            }
         }
-        if self.auth.required_scopes.is_empty() || self.auth.required_scopes.len() > 32
-            || self.auth.required_scopes.iter().any(|s| s.is_empty() || s.len() > 128 || s.chars().any(char::is_whitespace)) {
+        if self.auth.required_scopes.is_empty()
+            || self.auth.required_scopes.len() > 32
+            || self
+                .auth
+                .required_scopes
+                .iter()
+                .any(|s| s.is_empty() || s.len() > 128 || s.chars().any(char::is_whitespace))
+        {
             return Err("Set at least one bounded authorization scope.".into());
         }
-        if self.auth.allowed_client_ids.len() > 64 || self.auth.allowed_client_ids.iter().any(|s| s.is_empty() || s.len() > 256) {
+        if self.auth.allowed_client_ids.len() > 64
+            || self
+                .auth
+                .allowed_client_ids
+                .iter()
+                .any(|s| s.is_empty() || s.len() > 256)
+        {
             return Err("Invalid allowed_client_ids.".into());
         }
         if let Some(tls) = &self.tls {
@@ -152,7 +223,9 @@ impl HttpConfig {
             read_operator_file(&tls.private_key, 65536, true)?;
         }
         if let Some(path) = &self.browser_config {
-            let value: serde_json::Value = serde_json::from_slice(&read_operator_file(path, 65536, true)?).map_err(|_| "Invalid browser template JSON")?;
+            let value: serde_json::Value =
+                serde_json::from_slice(&read_operator_file(path, 65536, true)?)
+                    .map_err(|_| "Invalid browser template JSON")?;
             if !value.is_object() || value.get("profile").is_some() {
                 return Err("HTTP browser templates must be objects without profile: every lease owns a fresh private profile.".into());
             }
@@ -179,7 +252,21 @@ mod tests {
     #[test]
     fn quotas_are_finite_and_consistent() {
         assert!(Limits::default().validate().is_ok());
-        assert!(Limits { max_browsers_per_owner: 100, ..Limits::default() }.validate().is_err());
-        assert!(Limits { idle_seconds: 0, ..Limits::default() }.validate().is_err());
+        assert!(
+            Limits {
+                max_browsers_per_owner: 100,
+                ..Limits::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Limits {
+                idle_seconds: 0,
+                ..Limits::default()
+            }
+            .validate()
+            .is_err()
+        );
     }
 }
