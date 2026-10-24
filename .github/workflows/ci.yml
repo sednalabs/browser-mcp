@@ -45,6 +45,10 @@ jobs:
         run: npm test
         env:
           SEDNA_BROWSER_BINARY: ${{ github.workspace }}/target/debug/sedna-browser-mcp
+          # Hosted Ubuntu runners block Chromium's user-namespace sandbox.
+          # This override is scoped strictly to ephemeral CI fixture browsers;
+          # all deployed browser sessions remain sandboxed by default.
+          SEDNA_BROWSER_NO_SANDBOX: 'true'
       - name: Verify source packaging
         run: python3 scripts/package.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
