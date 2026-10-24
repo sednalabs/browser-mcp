@@ -247,10 +247,11 @@ test('modern MCP controls a continuous real browser with typed images and honest
   });
 
   await t.test('uses distinct page and Chrome target identities for duplicate-URL tabs', async () => {
-    const created = successful(await client.call('browser_tabs', { action: 'new', url: fixture.url }));
+    const duplicateUrl = latest.page.url;
+    const created = successful(await client.call('browser_tabs', { action: 'new', url: duplicateUrl }));
     assert.notEqual(created.page_id, pageId);
     const tabs = successful(await client.call('browser_tabs', { action: 'list' }));
-    const duplicates = tabs.pages.filter(tab => tab.url === fixture.url);
+    const duplicates = tabs.pages.filter(tab => tab.url === duplicateUrl);
     assert.equal(duplicates.length, 2);
     assert.notEqual(duplicates[0].target_id, duplicates[1].target_id);
     successful(await client.call('browser_tabs', { action: 'select', page_id: pageId }));
