@@ -8,7 +8,7 @@ This repository owns a persistent Playwright browser session exposed through a t
 - Serialize each browser operation through its final observation. Validate an entire action batch before performing any action.
 - Keep screenshots as typed MCP image content. Text, file paths, and serialized base64 are not substitutes for model-visible image blocks.
 - Preserve action receipts when screenshots or artifacts fail. Do not replay mutating operations after timeouts, cancellation, or lost responses.
-- Ordinary observation does not resize, scroll, or navigate. Responsive review is a separate mutating operation with per-image geometry and restoration status.
+- Ordinary observation does not resize, scroll, or navigate. `browser_step` exposes viewport changes as explicit mutating actions; responsive review remains a separate temporary capture with per-image geometry and restoration status.
 - Session state and visual results must not be cached across calls.
 - Own and clean up keys, mouse buttons, browser profiles, process groups, and optional diagnostic endpoints explicitly.
 - Keep credentials out of tool arguments, normal diagnostics, logs, and checked-in fixtures. Authentication configuration is session-scoped.

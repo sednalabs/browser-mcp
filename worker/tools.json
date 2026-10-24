@@ -28,7 +28,7 @@
   },
   {
     "name": "browser_step",
-    "description": "Perform 1 to 16 ordered browser actions and return a fresh inline screenshot plus an honest action receipt. The entire batch is validated before execution; execution stops at the first failure/cancellation. A failed action may already have had effects and must not be blindly replayed. Coordinates use viewport CSS pixels and require the latest observation_id. Prefer semantic targets. Owned keys/buttons are released before the final observation. A native dialog can instead return a blocked receipt with deferred cleanup and no image: only a dialog accept/dismiss action or session recovery may mutate until the original input settles and cleanup completes.",
+    "description": "Perform 1 to 16 ordered browser actions and return a fresh inline screenshot plus an honest action receipt. The resize action persistently sets this page's CSS viewport and optional scroll position; measured geometry is returned, without changing user agent, touch input or device scale factor. The entire batch is validated before execution; execution stops at the first failure/cancellation. A failed action may already have had effects and must not be blindly replayed. Coordinates use viewport CSS pixels and require the latest observation_id. Prefer semantic targets. Owned keys/buttons are released before the final observation. A native dialog can instead return a blocked receipt with deferred cleanup and no image: only a dialog accept/dismiss action or session recovery may mutate until the original input settles and cleanup completes.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -513,6 +513,35 @@
                 "required": [
                   "type",
                   "delta_y"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "resize"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "minimum": 320,
+                    "maximum": 1920
+                  },
+                  "height": {
+                    "type": "integer",
+                    "minimum": 240,
+                    "maximum": 1600
+                  },
+                  "scroll_y": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "required": [
+                  "type",
+                  "width",
+                  "height"
                 ],
                 "additionalProperties": false
               },

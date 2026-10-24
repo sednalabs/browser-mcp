@@ -50,7 +50,7 @@ for authorization inside the server.
 | Tool | Purpose |
 | --- | --- |
 | `browser_observe` | Inline current screenshot, geometry and compact controls. |
-| `browser_step` | Bounded ordered actions, cleanup, partial receipts and resulting image. |
+| `browser_step` | Bounded ordered actions (including persistent CSS viewport/scroll changes), cleanup, partial receipts and resulting image. |
 | `browser_review` | Explicit responsive captures with per-view geometry and restoration receipts. |
 | `browser_inspect` | Bounded recent console/network records and sequence cursors. |
 | `browser_tabs` | Explicit tab operations and actual Chrome target identities. |

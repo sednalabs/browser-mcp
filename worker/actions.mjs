@@ -180,6 +180,12 @@ export async function runAction(record, action, operation, state, options) {
       await page.mouse.up({ button }); state.buttons.delete(button); break;
     }
     case "scroll": await page.mouse.wheel(action.delta_x || 0, action.delta_y); break;
+    case "resize":
+      await page.setViewportSize({ width: action.width, height: action.height });
+      if (action.scroll_y !== undefined) {
+        await page.evaluate((value) => window.scrollTo(window.scrollX, value), action.scroll_y);
+      }
+      break;
     case "drag": {
       const from = await coordinatePoint(page, action.from);
       const to = await coordinatePoint(page, action.to);

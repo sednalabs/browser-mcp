@@ -131,6 +131,12 @@ mismatches, including a review having resized the page. It does not freeze DOM
 layout or prove that a moving control stayed at the same coordinate. Semantic
 locators remain preferable when available.
 
+`browser_step` also exposes an explicit `resize` action that sets the page's
+persistent CSS viewport size and optional vertical scroll position. The final
+observation reports measured viewport, scroll and image geometry; it does not
+change user agent, touch input or device scale factor. A resize can trigger
+application-visible resize handlers and is not automatically rolled back.
+
 Capture and control-map reads are sequential observations of a running page.
 Geometry instability is explicitly reported and disables coordinate actionability.
 They are not a transactional DOM snapshot. The worker does not execute caller-
@@ -172,7 +178,8 @@ queue; the architecture does not pretend otherwise.
 The first version implements visual operation and basic retained diagnostics.
 It does not add a shared browser daemon, browser-pool scheduler, arbitrary
 JavaScript tool, file-upload/download workflow, full DevTools profiler, extension
-host, cross-process auth broker or mobile-device emulation. Responsive review
-changes viewport size; it does not claim mobile user-agent/touch/device emulation.
-These can be added when a concrete workflow requires them without changing the
-core one-owner lifecycle.
+host, cross-process auth broker or mobile-device emulation. The `browser_step`
+resize action leaves the requested CSS viewport in place; only `browser_review`
+attempts to restore prior viewport and scroll. Neither operation claims mobile
+user-agent/touch/device emulation. These can be added when a concrete workflow
+requires them without changing the core one-owner lifecycle.

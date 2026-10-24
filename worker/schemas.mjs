@@ -42,6 +42,7 @@ const actionVariants = [
   action("mouse_move", { x: number(0, 1920), y: number(0, 1600), steps: integer(1, 60) }, ["x", "y"]),
   ...["mouse_down", "mouse_up"].map((name) => action(name, { button })),
   action("scroll", { delta_x: number(-6000, 6000), delta_y: number(-6000, 6000) }, ["delta_y"]),
+  action("resize", { width: integer(320, 1920), height: integer(240, 1600), scroll_y: integer(0, 1000000) }, ["width", "height"]),
   action("drag", { from: point, to: point, steps: integer(1, 60) }, ["from", "to"]),
   action("wait", { ms: integer(0, 1000) }, ["ms"]),
   action("wait_for", { target, state: { enum: ["visible", "hidden", "attached", "detached"] }, timeout_ms: integer(100, 5000) }, ["target"]),
@@ -58,7 +59,7 @@ export const tools = [
   },
   {
     name: "browser_step",
-    description: "Perform 1 to 16 ordered browser actions and return a fresh inline screenshot plus an honest action receipt. The entire batch is validated before execution; execution stops at the first failure/cancellation. A failed action may already have had effects and must not be blindly replayed. Coordinates use viewport CSS pixels and require the latest observation_id. Prefer semantic targets. Owned keys/buttons are released before the final observation. A native dialog can instead return a blocked receipt with deferred cleanup and no image: only a dialog accept/dismiss action or session recovery may mutate until the original input settles and cleanup completes.",
+    description: "Perform 1 to 16 ordered browser actions and return a fresh inline screenshot plus an honest action receipt. The resize action persistently sets this page's CSS viewport and optional scroll position; measured geometry is returned, without changing user agent, touch input or device scale factor. The entire batch is validated before execution; execution stops at the first failure/cancellation. A failed action may already have had effects and must not be blindly replayed. Coordinates use viewport CSS pixels and require the latest observation_id. Prefer semantic targets. Owned keys/buttons are released before the final observation. A native dialog can instead return a blocked receipt with deferred cleanup and no image: only a dialog accept/dismiss action or session recovery may mutate until the original input settles and cleanup completes.",
     annotations: hints(false),
     inputSchema: {
       ...object({

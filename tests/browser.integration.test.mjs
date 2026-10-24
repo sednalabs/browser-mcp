@@ -203,6 +203,49 @@ test('modern MCP controls a continuous real browser with typed images and honest
     assert.equal(latest.actionable, true);
   });
 
+  await t.test('selector click returns the destination and a typed screenshot', async () => {
+    const destination = new URL('/topics/cybersecurity/', fixture.url).href;
+    const result = await client.call('browser_step', {
+      page_id: pageId,
+      actions: [
+        { type: 'navigate', url: fixture.url },
+        { type: 'click', target: { role: 'link', name: 'Cybersecurity' } },
+      ],
+    });
+    latest = successful(result);
+    images(result);
+    assert.deepEqual(latest.actions.map(action => action.status), ['completed', 'completed']);
+    assert.equal(latest.page.url, destination);
+    assert.ok(latest.page.controls.some(control => control.name === 'Cybersecurity'));
+    assert.equal(result.content[latest.images[0].content_index].type, 'image');
+  });
+
+  await t.test('resize persists a measured CSS viewport, scroll position and responsive layout', async () => {
+    const destination = new URL('/topics/cybersecurity/', fixture.url).href;
+    const result = await client.call('browser_step', {
+      page_id: pageId,
+      actions: [{ type: 'resize', width: 390, height: 844, scroll_y: 120 }],
+    });
+    latest = successful(result);
+    images(result);
+    assert.equal(latest.page.url, destination);
+    assert.equal(latest.actions[0].status, 'completed');
+    assert.deepEqual(latest.geometry.viewport, { width: 390, height: 844 });
+    assert.deepEqual(latest.geometry.image, { width: 390, height: 844 });
+    assert.equal(latest.geometry.scroll.y, 120);
+    assert.equal(result.content[latest.images[0].content_index].type, 'image');
+    assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).paddingLeft), '14px');
+    assert.deepEqual(await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollY })), {
+      width: 390, height: 844, scrollY: 120,
+    });
+
+    const observed = await client.call('browser_observe', { page_id: pageId });
+    latest = successful(observed);
+    images(observed);
+    assert.deepEqual(latest.geometry.viewport, { width: 390, height: 844 });
+    assert.equal(latest.geometry.scroll.y, 120);
+  });
+
   await t.test('uses distinct page and Chrome target identities for duplicate-URL tabs', async () => {
     const created = successful(await client.call('browser_tabs', { action: 'new', url: fixture.url }));
     assert.notEqual(created.page_id, pageId);

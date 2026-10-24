@@ -21,6 +21,7 @@ const app = `<!doctype html>
 <header><h1>Sedna Browser MCP</h1></header>
 <main>
   <p>Deterministic local browser fixture. No external services.</p>
+  <a id="cybersecurity" href="/topics/cybersecurity/">Cybersecurity</a>
   <button id="toggle" aria-expanded="false" aria-controls="menu">Open menu</button>
   <section id="menu" hidden><button id="menu-action">Menu action</button><span>Menu stays open between calls.</span></section>
   <label for="draft">Unsaved draft</label><input id="draft" autocomplete="off" placeholder="Type without submitting">
