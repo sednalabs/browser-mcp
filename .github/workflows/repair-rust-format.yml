@@ -19,7 +19,9 @@ jobs:
         with:
           persist-credentials: true
       - name: Apply pinned rustfmt to Rust sources
-        run: cargo fmt --all
+        run: |
+          cargo fmt --all
+          cargo fmt --all
       - name: Verify formatting is now clean
         run: cargo fmt --all -- --check
       - name: Commit formatted code
