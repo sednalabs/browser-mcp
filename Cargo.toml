@@ -1,0 +1,39 @@
+[package]
+name = "sedna-browser-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+description = "A persistent visual browser MCP server with a Rust protocol host and Playwright worker."
+repository = "https://github.com/sednalabs/browser-mcp"
+publish = false
+
+[features]
+default = ["http"]
+http = ["dep:axum", "dep:axum-server", "dep:http", "dep:http-body", "dep:bytes", "dep:rustls", "dep:url", "dep:uuid", "dep:mcp-toolkit-auth", "dep:mcp-toolkit-http", "mcp-toolkit-server/http", "mcp-toolkit-server/auth"]
+
+[dependencies]
+mcp-toolkit-core = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02" }
+mcp-toolkit-server = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02", features = ["stdio"] }
+mcp-toolkit-process = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02" }
+serde_json = "1.0.150"
+tokio = { version = "1.52.3", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+serde = { version = "1.0.229", features = ["derive"] }
+axum = { version = "0.8.8", optional = true }
+axum-server = { version = "0.8.0", features = ["tls-rustls"], optional = true }
+http = { version = "1.5.0", optional = true }
+http-body = { version = "1.0.1", optional = true }
+bytes = { version = "1.12.1", optional = true }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+url = { version = "2.5.8", optional = true }
+uuid = { version = "1.28.0", features = ["v4"], optional = true }
+mcp-toolkit-auth = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02", optional = true }
+mcp-toolkit-http = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02", features = ["session"], optional = true }
+tokio-util = { version = "0.7.17", features = ["rt"] }
+
+[dev-dependencies]
+mcp-toolkit-testing = { git = "https://github.com/sednalabs/mcp-toolkit-rs", rev = "b5173f3212ba4d82369443e93bc59ac8a71e9a02" }
+
+[patch.crates-io]
+rmcp = { git = "https://github.com/sednalabs/rust-sdk", rev = "8bbec0ad47781dc00083c7e408aeeab78b440c6d" }
+rmcp-macros = { git = "https://github.com/sednalabs/rust-sdk", rev = "8bbec0ad47781dc00083c7e408aeeab78b440c6d" }

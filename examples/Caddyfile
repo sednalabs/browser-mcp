@@ -1,0 +1,7 @@
+# Example only. Set the DNS name and certificates in your deployment.
+browser.example.com {
+    reverse_proxy 127.0.0.1:9635 {
+        # Do not buffer an MCP response stream until the request finishes.
+        flush_interval -1
+    }
+}

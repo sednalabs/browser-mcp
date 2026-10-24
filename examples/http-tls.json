@@ -1,0 +1,15 @@
+{
+  "bind": "0.0.0.0:9635",
+  "resource_url": "https://browser.example.com:9635/mcp",
+  "allowed_hosts": ["browser.example.com:9635"],
+  "allowed_origins": ["https://browser.example.com:9635"],
+  "tls": {
+    "certificate": "/run/secrets/browser-certificate.pem",
+    "private_key": "/run/secrets/browser-private-key.pem"
+  },
+  "auth": {
+    "issuer": "https://login.example.com/realms/agents",
+    "allowed_client_ids": ["codex"],
+    "required_scopes": ["browser:use"]
+  }
+}

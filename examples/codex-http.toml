@@ -1,0 +1,6 @@
+[mcp_servers.sedna_browser]
+url = "https://browser.example.com/mcp"
+scopes = ["browser:use"]
+tool_timeout_sec = 180
+# Authenticate with: codex mcp login sedna_browser --scopes browser:use
+# The issuer must mint tokens with audience https://browser.example.com/mcp.

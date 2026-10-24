@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      codex_consumer_proof:
+        description: Run the opt-in disposable Codex stdio MCP consumer journey instead of the full repository suite
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.codex_consumer_proof != true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain
+      - name: Reject unresolved dependency graph
+        run: test ! -e Cargo.lock.pending
+      - name: Install locked JavaScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify shared tool schemas
+        run: npm run check:catalog
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Compile and test Rust host
+        run: cargo test --locked --all-targets
+      - name: Verify stdio-only compilation
+        run: cargo test --locked --no-default-features --lib
+      - name: Check Rust warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Install test browser
+        # GitHub's ubuntu-24.04 image already includes the required Chromium libraries.
+        # Do not apt-upgrade the hosted image during every CI run.
+        run: npx playwright install chromium
+      - name: Exercise worker and actual MCP browser calls
+        run: npm test
+        env:
+          SEDNA_BROWSER_BINARY: ${{ github.workspace }}/target/debug/sedna-browser-mcp
+          # Hosted Ubuntu runners block Chromium's user-namespace sandbox.
+          # This override is scoped strictly to ephemeral CI fixture browsers;
+          # all deployed browser sessions remain sandboxed by default.
+          SEDNA_BROWSER_NO_SANDBOX: 'true'
+      - name: Verify source packaging
+        run: python3 scripts/package.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: success()
+        with:
+          name: sedna-browser-mcp-source
+          path: dist/*-source.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  codex-consumer-proof:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.codex_consumer_proof == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install locked JavaScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the exact Browser MCP candidate
+        run: cargo build --locked --bin sedna-browser-mcp
+      - name: Install fixture Chromium
+        run: npx playwright install chromium
+      - name: Exercise the exact released Codex stdio consumer
+        run: npm exec --yes --package=@openai/codex@0.163.0 -- node tests/codex_stdio_journey.mjs
+        env:
+          SEDNA_BROWSER_BINARY: ${{ github.workspace }}/target/debug/sedna-browser-mcp
+          # Scoped to this disposable local-fixture browser only.
+          SEDNA_BROWSER_NO_SANDBOX: 'true'

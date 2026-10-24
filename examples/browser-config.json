@@ -1,0 +1,7 @@
+{
+  "headless": true,
+  "cdp": false,
+  "viewport": { "width": 1280, "height": 800 },
+  "action_timeout_ms": 5000,
+  "operation_timeout_ms": 60000
+}

@@ -1,0 +1,20 @@
+{
+  "bind": "127.0.0.1:9635",
+  "resource_url": "https://browser.example.com/mcp",
+  "allowed_hosts": ["browser.example.com", "127.0.0.1:9635", "localhost:9635"],
+  "allowed_origins": ["https://browser.example.com"],
+  "auth": {
+    "issuer": "https://login.example.com/realms/agents",
+    "allowed_client_ids": ["codex"],
+    "required_scopes": ["browser:use"]
+  },
+  "limits": {
+    "max_browsers": 16,
+    "max_browsers_per_owner": 4,
+    "idle_seconds": 1800,
+    "lifetime_seconds": 86400,
+    "max_http_requests": 32,
+    "max_legacy_sessions": 64,
+    "max_request_bytes": 131072
+  }
+}
