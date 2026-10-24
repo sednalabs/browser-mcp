@@ -325,13 +325,13 @@ async fn bind_principal(State(state): State<GuardState>, request: Request, next:
     parts.extensions.remove::<VerifiedAuthContext>();
     parts.extensions.insert(RequestPrincipal(principal.clone()));
     let response = next.run(Request::from_parts(parts, body)).await;
-    if let Ok(Some(id)) = session_header(response.headers()) {
-        if !state.custody.bind_issued(&id, principal).await {
-            return rejection(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Could not bind the issued legacy session.",
-            );
-        }
+    if let Ok(Some(id)) = session_header(response.headers())
+        && !state.custody.bind_issued(&id, principal).await
+    {
+        return rejection(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Could not bind the issued legacy session.",
+        );
     }
     response
 }
