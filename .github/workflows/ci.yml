@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      codex_consumer_proof:
+        description: Run the opt-in disposable Codex stdio MCP consumer journey instead of the full repository suite
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -15,6 +21,7 @@ concurrency:
 
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.codex_consumer_proof != true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -60,3 +67,28 @@ jobs:
           path: dist/*-source.zip
           if-no-files-found: error
           retention-days: 14
+
+  codex-consumer-proof:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.codex_consumer_proof == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install locked JavaScript dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the exact Browser MCP candidate
+        run: cargo build --locked --bin sedna-browser-mcp
+      - name: Install fixture Chromium
+        run: npx playwright install chromium
+      - name: Exercise the exact released Codex stdio consumer
+        run: npm exec --yes --package=@openai/codex@0.163.0 -- node tests/codex_stdio_journey.mjs
+        env:
+          SEDNA_BROWSER_BINARY: ${{ github.workspace }}/target/debug/sedna-browser-mcp
+          # Scoped to this disposable local-fixture browser only.
+          SEDNA_BROWSER_NO_SANDBOX: 'true'

@@ -53,6 +53,7 @@
     "src/server.rs",
     "src/worker.rs",
     "tests/browser.integration.test.mjs",
+    "tests/codex_stdio_journey.mjs",
     "tests/fixtures/mock-worker.mjs",
     "tests/http.integration.test.mjs",
     "tests/lifecycle.integration.test.mjs",
