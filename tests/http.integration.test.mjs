@@ -115,7 +115,11 @@ async function startHost(t, { limits = {}, tls = false } = {}) {
     const legacy = options.legacy ?? false;
     const headers = { accept:'application/json, text/event-stream','content-type':'application/json' };
     if (subject !== null) headers.authorization = 'Bearer '+issuer.token(subject, options.audience || base+'/mcp', options.claims || {});
-    if (!legacy) { headers['mcp-protocol-version']='2026-07-28'; headers['mcp-method']=method; }
+    if (!legacy) {
+      headers['mcp-protocol-version']='2026-07-28';
+      headers['mcp-method']=method;
+      if (method === 'tools/call' && typeof params.name === 'string') headers['mcp-name']=params.name;
+    }
     if(options.session) headers['mcp-session-id']=options.session;
     Object.assign(headers,options.headers || {});
     const body = {jsonrpc:'2.0', ...(options.notification ? {} : {id:++nextId}), method, params:legacy?params:{...params,_meta:{'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientInfo':{name:'browser-http-tests',version:'0.1.0'},'io.modelcontextprotocol/clientCapabilities':{}}}};
