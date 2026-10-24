@@ -189,15 +189,13 @@ impl BrowserAuthority {
         // slot while the original mouse/key operation is still completing.
         tokio::spawn(async move {
             let mut value = lease.0.worker.call(method, params, cancel).await?;
-            if let Some(text) = value.pointer_mut("/content/0/text") {
-                if let Some(raw) = text.as_str() {
-                    if let Ok(mut data) = serde_json::from_str::<Value>(raw) {
-                        if let Some(object) = data.as_object_mut() {
-                            object.insert("browser_session_id".into(), json!(id));
-                            *text = Value::String(data.to_string());
-                        }
-                    }
-                }
+            if let Some(text) = value.pointer_mut("/content/0/text")
+                && let Some(raw) = text.as_str()
+                && let Ok(mut data) = serde_json::from_str::<Value>(raw)
+                && let Some(object) = data.as_object_mut()
+            {
+                object.insert("browser_session_id".into(), json!(id));
+                *text = Value::String(data.to_string());
             }
             drop(lease);
             Ok::<_, String>(value)
