@@ -185,10 +185,10 @@ async fn run_actor(
             .await;
         if let Err(message) = &result {
             failure = Some(message.clone());
-            if let Some(mut running) = process.take() {
-                if let Err(error) = running.terminate().await {
-                    cleanup_error = Some(error);
-                }
+            if let Some(mut running) = process.take()
+                && let Err(error) = running.terminate().await
+            {
+                cleanup_error = Some(error);
             }
         }
         let _ = operation.response.send(result);
@@ -199,10 +199,10 @@ async fn run_actor(
             "Browser host stopped before dispatching this queued call.".into(),
         ));
     }
-    if let Some(mut running) = process {
-        if let Err(error) = running.close().await {
-            cleanup_error = Some(error);
-        }
+    if let Some(mut running) = process
+        && let Err(error) = running.close().await
+    {
+        cleanup_error = Some(error);
     }
     match cleanup_error {
         Some(error) => Err(error),
