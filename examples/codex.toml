@@ -1,0 +1,5 @@
+[mcp_servers.sedna_browser]
+command = "node"
+args = ["/absolute/path/to/sedna-browser-mcp/scripts/start.mjs"]
+startup_timeout_sec = 20
+tool_timeout_sec = 180

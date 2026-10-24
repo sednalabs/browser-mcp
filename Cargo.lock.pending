@@ -1,0 +1,5 @@
+The root Cargo.lock is the prior validated stdio graph. New HTTP dependencies
+have not been resolved in this authoring environment (no Rust/network access).
+Run node scripts/verify.mjs before publication; it refreshes the lock, formats
+Rust and executes the full qualification. The publishing script refuses to
+publish without that run. Do not claim cargo --locked is qualified yet.

@@ -1,0 +1,11 @@
+/target/
+/node_modules/
+/test-results/
+/playwright-report/
+/.local/
+/.env
+/dist/
+*.log
+*.zip
+*.tmp
+.DS_Store

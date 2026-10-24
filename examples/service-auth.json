@@ -1,0 +1,5 @@
+{
+  "name": "local-development-service",
+  "allowed_origins": ["http://127.0.0.1:3000"],
+  "env_headers": { "Authorization": "SEDNA_DEVELOPMENT_AUTHORIZATION" }
+}

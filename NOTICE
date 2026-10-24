@@ -1,0 +1,15 @@
+Sedna Browser MCP
+Copyright 2026 Sedna Labs
+
+This project adapts browser control and review code from the user-supplied
+Sedna Labs fork of OpenAI Codex, distributed under the Apache License 2.0.
+OpenAI Codex
+Copyright 2025 OpenAI
+
+The source archive identifies revision
+1cff1bf1c78cb878a95ba5339daf359eb6b9ee2f.
+See docs/provenance.md for the source modules and the adaptation boundary.
+
+Third-party dependencies retain their own licenses. Their source is resolved
+through the committed Cargo.lock and package-lock.json; it is not bundled in
+the first-commit source archive.

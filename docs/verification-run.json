@@ -1,0 +1,17 @@
+{
+  "status": "failed",
+  "started_at": "2026-10-19T13:21:15.600Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "commands": [
+    {
+      "command": [
+        "/opt/nvm/versions/node/v22.16.0/bin/node",
+        "/mnt/data/browser_mcp_work/sedna-browser-mcp/scripts/prepare.mjs"
+      ],
+      "exit_code": 1,
+      "elapsed_ms": 318
+    }
+  ],
+  "finished_at": "2026-10-19T13:21:15.919Z"
+}

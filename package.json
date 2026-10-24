@@ -1,0 +1,30 @@
+{
+  "name": "@sednalabs/browser-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persistent visual browser control over MCP, with a Rust host and Playwright runtime.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
+    "browser:install": "playwright install chromium",
+    "check:catalog": "node scripts/check-catalog.mjs",
+    "test:worker": "node --test --test-concurrency=1 worker/tests/*.test.mjs",
+    "test:protocol": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test": "npm run check:catalog && npm run test:worker && npm run test:protocol",
+    "verify": "node scripts/verify.mjs",
+    "publish:pr1": "node scripts/publish-pr1.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "playwright": "1.64.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sednalabs/browser-mcp.git"
+  }
+}
