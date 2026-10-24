@@ -39,8 +39,10 @@ jobs:
         run: cargo test --locked --no-default-features --lib
       - name: Check Rust warnings
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Install test browser and Linux libraries
-        run: npx playwright install --with-deps chromium
+      - name: Install test browser
+        # GitHub's ubuntu-24.04 image already includes the required Chromium libraries.
+        # Do not apt-upgrade the hosted image during every CI run.
+        run: npx playwright install chromium
       - name: Exercise worker and actual MCP browser calls
         run: npm test
         env:
