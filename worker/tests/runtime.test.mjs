@@ -37,6 +37,20 @@ async function makeRuntime(t, overrides = {}) {
   return runtime;
 }
 
+test("sandbox startup failure is reported without disabling Chromium sandboxing", async (t) => {
+  const runtime = await makeRuntime(t);
+  runtime.ensureBrowser = async () => {
+    throw new Error("Chromium sandboxing failed / No usable sandbox, zygote_host_impl_linux.cc:130, SIGTRAP");
+  };
+  const result = await runtime.call("sandbox-preflight", "browser_observe", {});
+  const data = textOf(result);
+  assert.equal(result.isError, true);
+  assert.equal(data.error.code, "CHROMIUM_SANDBOX_UNAVAILABLE");
+  assert.match(data.error.message, /sandbox was not disabled/i);
+  assert.match(data.error.message, /root-owned per-executable AppArmor/i);
+  assert.match(data.error.message, /do not use --no-sandbox for open-web browsing/i);
+});
+
 test("real browser preserves state, receipts, cancellation and review geometry", { timeout: 60000 }, async (t) => {
   const server = await fixture();
   t.after(() => server.close());

@@ -99,10 +99,18 @@ export class BrowserRuntime {
       let response;
       try { response = await this.execute(operation, method, params); }
       catch (error) {
+        const sandboxUnavailable = /(?:no usable sandbox|chromium sandboxing failed)/i.test(String(error?.message || ""));
+        const code = error.code || (sandboxUnavailable ? "CHROMIUM_SANDBOX_UNAVAILABLE" : "BROWSER_ERROR");
+        const message = this.safe(error.message);
         response = jsonResult({
           operation_id: id,
           status: error instanceof Cancelled ? "cancelled" : error instanceof Rejected ? "rejected" : "failed",
-          error: { code: error.code || "BROWSER_ERROR", message: this.safe(error.message) },
+          error: {
+            code,
+            message: sandboxUnavailable
+              ? message + " Chromium's sandbox was not disabled. On Ubuntu, use the root-owned per-executable AppArmor guidance in docs/operations.md; do not use --no-sandbox for open-web browsing."
+              : message,
+          },
           session: this.status(),
         }, [], true);
       } finally { operation.finish(); this.operations.delete(key); }

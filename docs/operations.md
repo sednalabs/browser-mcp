@@ -21,7 +21,20 @@ time, while the worker validates calls from `worker/schemas.mjs`.
 On a root container or Linux environment without usable Chromium user namespaces,
 the default sandbox-enabled launch can fail. Opt into
 `SEDNA_BROWSER_NO_SANDBOX=true` only when that is an intentional property of the
-container. It is not the default in client examples or CI.
+container. It is not the default in client examples. CI sets the override only
+for disposable local-fixture browsers on runners that block user-namespace
+sandboxing; that coverage does not prove a sandbox-enabled launch works there.
+
+When the provider reports `CHROMIUM_SANDBOX_UNAVAILABLE`, it has not disabled
+Chromium's sandbox or retried with weaker flags. On Ubuntu hosts that restrict
+unprivileged user namespaces, prefer a root-owned AppArmor profile allowing
+`userns` for the exact pinned Chromium executable. Keep the executable and its
+parent directories root-owned and non-writable by the MCP account; a profile
+matching an executable under a user-writable package directory does not protect
+against replacement by that user. Avoid wildcard paths and do not disable the
+host-wide `apparmor_restrict_unprivileged_userns` setting. See Chromium's
+[AppArmor user-namespace guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+Do not use `SEDNA_BROWSER_NO_SANDBOX` when browsing the open web.
 
 ## Local configuration
 
