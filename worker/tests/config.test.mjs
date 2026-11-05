@@ -132,6 +132,7 @@ test("diagnostics scope navigation and origin, redact URLs, and advance filtered
     kind: "console", level: "error", text: "service diagnostic /internal?token=runtime-secret#runtime-fragment",
     location: { url: "https://current.example/diagnostic?token=raw-url-secret#raw-url-fragment", line: 1 },
   });
+  history.push({ kind: "console", level: "error", text: "bare ?token=standalone-secret#standalone-fragment" });
   const currentFetch = request("https://current.example/api/check?token=request-secret#request-fragment", { method: "POST" });
   page.emit("request", currentFetch);
   respond(currentFetch, 201);
@@ -140,6 +141,10 @@ test("diagnostics scope navigation and origin, redact URLs, and advance filtered
   page.emit("request", externalImage);
   respond(externalImage, 200);
   page.emit("requestfinished", externalImage);
+  const failedFetch = request("https://current.example/api/failure?token=failure-url-secret#failure-url-fragment");
+  failedFetch.failure = () => ({ errorText: "Request failed https://current.example/error?token=failure-text-secret#failure-text-fragment" });
+  page.emit("request", failedFetch);
+  page.emit("requestfailed", failedFetch);
   page.emit("console", {
     type: () => "error",
     text: () => "failed https://current.example/debug?token=console-secret#console-fragment",
@@ -154,10 +159,12 @@ test("diagnostics scope navigation and origin, redact URLs, and advance filtered
   assert.ok(current.events.some((event) => event.url?.endsWith("/api/check")));
   assert.ok(!current.events.some((event) => event.url?.includes("/api/old")));
   assert.ok(current.events.every((event) => event.navigation_seq === navigationStartSeq));
-  assert.doesNotMatch(JSON.stringify(current), /old-url-secret|old-url-fragment|old-request-secret|old-request-fragment|navigation-secret|navigation-fragment|runtime-secret|runtime-fragment|raw-url-secret|raw-url-fragment|request-secret|request-fragment|external-secret|external-fragment|console-secret|console-fragment|location-secret|location-fragment/);
+  assert.doesNotMatch(JSON.stringify(current), /old-url-secret|old-url-fragment|old-request-secret|old-request-fragment|navigation-secret|navigation-fragment|runtime-secret|runtime-fragment|raw-url-secret|raw-url-fragment|standalone-secret|standalone-fragment|request-secret|request-fragment|external-secret|external-fragment|failure-url-secret|failure-url-fragment|failure-text-secret|failure-text-fragment|console-secret|console-fragment|location-secret|location-fragment/);
   const injectedEvent = current.events.find((event) => event.text?.startsWith("service diagnostic"));
   assert.equal(injectedEvent.text, "service diagnostic /internal");
   assert.equal(injectedEvent.location.url, "https://current.example/diagnostic");
+  const standaloneEvent = current.events.find((event) => event.text?.startsWith("bare "));
+  assert.equal(standaloneEvent.text, "bare ?token=[redacted]");
   const consoleEvent = current.events.find((event) => event.location?.url === "https://current.example/script.js");
   assert.equal(consoleEvent.location.url, "https://current.example/script.js");
   assert.equal(consoleEvent.text, "failed https://current.example/debug");

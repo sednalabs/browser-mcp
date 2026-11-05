@@ -15,7 +15,7 @@ function redactUrlsInText(value, auth) {
     const trailing = url.match(/[),.;!?]+$/)?.[0] || "";
     const candidate = trailing ? url.slice(0, -trailing.length) : url;
     return withoutQueryAndFragment(candidate) + trailing;
-  }).replace(/([?&][^=&#\s"'<>]+)=([^&#\s"'<>]*)/g, "$1=[redacted]");
+  }).replace(/([?&][^=&#\s"'<>]+)=([^&#\s"'<>]*)(?:#[^\s"'<>]*)?/g, "$1=[redacted]");
 }
 
 function originOf(value) {
@@ -88,7 +88,7 @@ export class Diagnostics {
     if (!entry) return;
     entry.event.state = state;
     entry.event.duration_ms = Date.now() - entry.started;
-    if (state === "failed") entry.event.error = request.failure()?.errorText || "Request failed";
+    if (state === "failed") entry.event.error = this.safeText(request.failure()?.errorText || "Request failed", 300);
     // Completion gets its own sequence so cursor users do not miss an update to
     // a request that began before their last inspection.
     this.push({ ...entry.event, kind: "network", request_started_seq: entry.event.seq, updated: true });
