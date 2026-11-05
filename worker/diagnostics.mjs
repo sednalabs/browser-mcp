@@ -117,11 +117,12 @@ export class Diagnostics {
     const limit = params.limit ?? 80;
     const events = params.since_seq === undefined ? filtered.slice(-limit) : filtered.slice(0, limit);
     const hasMore = filtered.length > events.length;
+    const cursorAhead = params.since_seq !== undefined && params.since_seq > this.seq;
     const oldestRetainedSeq = this.events[0]?.seq ?? null;
     const retentionGap = this.dropped > 0 && (params.since_seq === undefined
       ? scope !== "current_navigation" || this.currentNavigationSeq === null || oldestRetainedSeq === null || this.currentNavigationSeq < oldestRetainedSeq
       : oldestRetainedSeq === null || params.since_seq < oldestRetainedSeq - 1);
-    const coverageComplete = scopeAvailable && !hasMore && !retentionGap;
+    const coverageComplete = scopeAvailable && !cursorAhead && !hasMore && !retentionGap;
     return {
       scope,
       scope_available: scopeAvailable,
@@ -138,6 +139,7 @@ export class Diagnostics {
       coverage: {
         mode: params.since_seq === undefined ? "recent_tail" : "forward",
         omitted_direction: hasMore ? (params.since_seq === undefined ? "older" : "newer") : null,
+        cursor_ahead: cursorAhead,
         retention_gap: retentionGap,
         complete: coverageComplete,
       },

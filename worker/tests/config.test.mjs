@@ -93,6 +93,10 @@ test("diagnostic completion gets a cursor event and retention is bounded", () =>
   const expiredCursor = history.read({ since_seq: 0, limit: 200 });
   assert.equal(expiredCursor.coverage.retention_gap, true);
   assert.equal(expiredCursor.coverage.complete, false);
+  const cursorAhead = history.read({ since_seq: history.seq + 1 });
+  assert.equal(cursorAhead.coverage.cursor_ahead, true);
+  assert.equal(cursorAhead.coverage.complete, false);
+  assert.equal(cursorAhead.next_seq, history.seq);
   history.dispose();
   assert.equal(page.listenerCount("request"), 0);
 });
