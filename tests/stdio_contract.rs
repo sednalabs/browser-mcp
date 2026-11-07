@@ -58,4 +58,14 @@ fn modern_catalog_has_explicit_private_zero_lifetime_cache_hints() {
     assert_eq!(response["result"]["ttlMs"], 0);
     assert_eq!(response["result"]["cacheScope"], "private");
     assert_eq!(response["result"]["resultType"], "complete");
+    let step = response["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "browser_step")
+        .unwrap();
+    assert!(step["description"]
+        .as_str()
+        .unwrap()
+        .contains("stop automated interaction and ask a human or the site owner"));
 }
