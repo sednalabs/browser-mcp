@@ -64,8 +64,10 @@ fn modern_catalog_has_explicit_private_zero_lifetime_cache_hints() {
         .iter()
         .find(|tool| tool["name"] == "browser_step")
         .unwrap();
-    assert!(step["description"]
-        .as_str()
-        .unwrap()
-        .contains("stop automated interaction and ask a human or the site owner"));
+    assert!(
+        step["description"]
+            .as_str()
+            .unwrap()
+            .contains("stop automated interaction and ask a human or the site owner")
+    );
 }
