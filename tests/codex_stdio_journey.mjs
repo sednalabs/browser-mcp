@@ -24,9 +24,9 @@ const responseCompleted = id => ({
   type: 'response.completed',
   response: { id, usage: { input_tokens: 0, input_tokens_details: null, output_tokens: 0, output_tokens_details: null, total_tokens: 0 } },
 });
-const toolCall = (responseId, callId, args) => sse([
+const toolCall = (responseId, callId, args, name = "browser_step") => sse([
   responseCreated(responseId),
-  { type: 'response.output_item.done', item: { type: 'function_call', call_id: callId, namespace: 'mcp__browser', name: 'browser_step', arguments: JSON.stringify(args) } },
+  { type: 'response.output_item.done', item: { type: 'function_call', call_id: callId, namespace: 'mcp__browser', name, arguments: JSON.stringify(args) } },
   responseCompleted(responseId),
 ]);
 const finalMessage = responseId => sse([
@@ -92,7 +92,7 @@ try {
       let stream;
       if (requestCount === 1) {
         const browser = body.tools?.find(tool => tool.type === 'namespace' && tool.name === 'mcp__browser');
-        assert.deepEqual(browser?.tools?.map(tool => tool.name).sort(), ['browser_step']);
+        assert.deepEqual(browser?.tools?.map(tool => tool.name).sort(), ['browser_observe', 'browser_step']);
         stream = toolCall('browser-mcp-resp-1', 'browser-mcp-call-1', {
           actions: [{ type: 'navigate', url: fixture.url }], settle_ms: 100,
         });
@@ -120,7 +120,54 @@ try {
         assert.equal(resized.browser_instance_id, initialReceipt.browser_instance_id, 'Second call did not retain the same browser session.');
         assert.deepEqual(resized.geometry?.viewport, { width: 390, height: 844 });
         assert.deepEqual(resized.geometry?.image, { width: 390, height: 844 });
-        stream = finalMessage('browser-mcp-resp-3');
+        stream = toolCall('browser-mcp-resp-3', 'browser-mcp-call-3', {
+          page_id: initialReceipt.page_id, screenshot: false,
+          reading: { max_chars: 200, max_blocks: 8 },
+        }, 'browser_observe');
+      } else if (requestCount === 4) {
+        const result = receiptFrom(body, 'browser-mcp-call-3');
+        assert.equal(result.items.filter(item => item.type === 'input_image').length, 0, 'Text-only observation unexpectedly forwarded pixels.');
+        const text = result.receipt;
+        assert.equal(text.status, 'completed');
+        assert.equal(text.page_id, initialReceipt.page_id);
+        assert.equal(text.browser_instance_id, initialReceipt.browser_instance_id);
+        assert.equal(text.screenshot_captured, false);
+        assert.equal(text.actionable, false);
+        assert.equal(text.reading.coverage.continuation, false);
+        const actualChars = text.reading.blocks.reduce((sum, block) => sum + block.text.length + (block.url?.length || 0), 0);
+        assert.equal(text.reading.coverage.returned_chars, actualChars);
+        assert.ok(actualChars <= 200);
+        assert.ok(text.reading.blocks.some(block => block.type === 'heading' && block.text === 'Sedna Browser MCP'));
+        assert.ok(text.reading.blocks.length > 0);
+        assert.equal(text.reading.observation_id, text.observation_id);
+        stream = toolCall('browser-mcp-resp-4', 'browser-mcp-call-4', {
+          page_id: initialReceipt.page_id, semantic: {}, reading: { root_css: 'h1' },
+          element_geometry: { selectors: ['h1'], max_matches: 1 },
+        }, 'browser_observe');
+      } else if (requestCount === 5) {
+        const result = receiptFrom(body, 'browser-mcp-call-4');
+        assertTypedPng(result.items);
+        const rich = result.receipt;
+        assert.equal(rich.status, 'completed');
+        assert.equal(rich.page_id, initialReceipt.page_id);
+        assert.equal(rich.browser_instance_id, initialReceipt.browser_instance_id);
+        assert.equal(rich.screenshot_captured, true);
+        assert.equal(rich.actionable, true);
+        assert.ok(rich.page.accessibility.nodes.some(node => node.role === 'heading'));
+        assert.equal(rich.page.accessibility.observation_id, rich.observation_id);
+        assert.ok(rich.reading.blocks.some(block => block.type === 'heading'));
+        assert.equal(rich.element_geometry.observation_id, rich.observation_id);
+        assert.equal(rich.element_geometry.page_id, rich.page_id);
+        assert.equal(rich.element_geometry.results[0].status, 'matched');
+        assert.equal(rich.element_geometry.results[0].selector_index, 0);
+        assert.equal(rich.element_geometry.results[0].elements.length, 1);
+        const headingGeometry = rich.element_geometry.results[0].elements[0];
+        assert.equal(headingGeometry.visibility, 'visible');
+        assert.ok(Number.isFinite(headingGeometry.rect.width) && headingGeometry.rect.width > 0);
+        assert.ok(Number.isFinite(headingGeometry.rect.height) && headingGeometry.rect.height > 0);
+        assert.ok(rich.reading.blocks.some(block => block.type === 'heading' && block.text === 'Sedna Browser MCP'));
+        assert.equal(rich.reading.observation_id, rich.observation_id);
+        stream = finalMessage('browser-mcp-resp-5');
       } else {
         throw new Error(`Unexpected extra Responses API request ${requestCount}.`);
       }
@@ -146,7 +193,7 @@ try {
     'request_max_retries = 0', 'stream_max_retries = 0', '',
     '[mcp_servers.browser]', `command = ${JSON.stringify(process.execPath)}`,
     `args = [${JSON.stringify(path.join(root, 'scripts/start.mjs'))}]`, 'required = true',
-    'startup_timeout_sec = 20', 'tool_timeout_sec = 30', 'enabled_tools = ["browser_step"]',
+    'startup_timeout_sec = 20', 'tool_timeout_sec = 30', 'enabled_tools = ["browser_step", "browser_observe"]',
     'default_tools_approval_mode = "approve"', '', '[mcp_servers.browser.env]',
     `SEDNA_BROWSER_BINARY = ${JSON.stringify(browserBinary)}`, 'SEDNA_BROWSER_NO_SANDBOX = "true"', '',
   ].join('\n');
@@ -155,7 +202,7 @@ try {
   codex = spawn('codex', [
     'exec', '--json', '--ephemeral', '--skip-git-repo-check', '--model', 'gpt-5.2',
     '--sandbox', 'read-only', '--color', 'never', '--cd', codexCwd,
-    'Use only the configured browser MCP server. Open the local fixture, then set its CSS viewport to 390 by 844 pixels. Do not use shell tools or other servers.',
+    'Use only the configured browser MCP server. Open the local fixture, set its CSS viewport to 390 by 844 pixels, read bounded text without pixels, then observe semantic, readable and element geometry with a screenshot. Do not use shell tools or other servers.',
   ], {
     cwd: codexCwd,
     env: { PATH: process.env.PATH || '', HOME: process.env.HOME, CODEX_HOME: codexHome, BROWSER_MCP_TEST_API_KEY: fakeKey },
@@ -174,8 +221,8 @@ try {
   });
   assert.equal(apiFailure, undefined, apiFailure?.message);
   assert.equal(exit.code, 0, `Codex CLI exited ${exit.code ?? exit.signal}: ${stderr.replaceAll(fakeKey, '[redacted]').slice(-1200)}`);
-  assert.equal(requestCount, 3, 'Expected an initial action, a same-session viewport action, and a final response.');
-  process.stdout.write('Codex 0.163.0 stdio journey passed: tool discovered, typed PNG forwarded, same page/session resized to 390x844.\n');
+  assert.equal(requestCount, 5, 'Expected navigation, same-session resize, text-only read, rich screenshot observation and final response.');
+  process.stdout.write('Codex 0.163.0 stdio journey passed: tool discovered, typed PNG forwarded, same page/session resized to 390x844, bounded reading without pixels, then rich semantics/reading/geometry with native PNG.\n');
 } finally {
   if (codex && codex.exitCode === null && codex.signalCode === null) {
     codex.kill('SIGTERM');
