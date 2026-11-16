@@ -20,6 +20,28 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 64
+        },
+        "semantic": {
+          "type": "object",
+          "properties": {
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "root_css": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [],
+          "additionalProperties": false
         }
       },
       "required": [],
@@ -47,6 +69,28 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 120
+        },
+        "semantic": {
+          "type": "object",
+          "properties": {
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "root_css": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [],
+          "additionalProperties": false
         },
         "actions": {
           "type": "array",

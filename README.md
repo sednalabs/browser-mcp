@@ -66,6 +66,9 @@ The existing viewport/action semantics and recovery model are documented in
 [operations](docs/operations.md). HTTP leases add a transport-independent
 owner check; they do not replace browser/page/observation identities.
 
+Optional `semantic: {}` on observe/step adds bounded DOM-derived roles, names,
+state and hierarchy alongside the same inline image. See [contract and limitations](docs/semantic-observations.md).
+
 ## Verify and publish PR #1
 
 ```sh

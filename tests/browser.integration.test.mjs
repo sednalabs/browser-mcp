@@ -66,6 +66,16 @@ test('modern MCP controls a continuous real browser with typed images and honest
     page.on('dialog', () => {});
   });
 
+  await t.test('delivers optional bounded semantic content with a native MCP image', async () => {
+    const result = await client.call('browser_observe', { page_id: pageId, semantic: {} });
+    latest = successful(result);
+    images(result);
+    assert.equal(latest.page.accessibility.observation_id, latest.observation_id);
+    assert.ok(latest.page.accessibility.nodes.some(node => node.name === 'Unsaved draft'));
+    assert.ok(latest.page.accessibility.nodes.some(node => node.role === 'heading'));
+    assert.ok(JSON.stringify(latest.page.accessibility).length < 60000);
+  });
+
   await t.test('keeps an open menu, unsaved input, focus and the same loaded document across observe calls', async () => {
     latest = successful(await client.call('browser_step', {
       page_id: pageId,

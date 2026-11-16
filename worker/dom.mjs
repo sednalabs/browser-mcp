@@ -4,11 +4,11 @@
 // (codex-rs/browser-computer-use/src). This extraction adds ranking, hidden/inert
 // filtering and explicit locator objects while retaining label-first field text.
 
-export function inspectDOM({ limit = 24 } = {}) {
+export function inspectDOM({ limit = 24, semantic } = {}) {
   const viewport = { width: innerWidth, height: innerHeight };
   const compact = (value, max = 160) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
   function roleOf(element) {
-    if (element.getAttribute("role")) return element.getAttribute("role");
+    if (element.getAttribute("role")) return compact(element.getAttribute("role"), 60).split(/\s+/)[0];
     const tag = element.tagName.toLowerCase();
     if (tag === "a") return "link";
     if (tag === "button") return "button";
@@ -69,7 +69,57 @@ export function inspectDOM({ limit = 24 } = {}) {
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0 && !el.closest("[hidden],[inert],[aria-hidden='true']");
     }).slice(0, 8).map((el) => ({ role: roleOf(el), text: compact(el.innerText, 240) }));
+  let accessibility;
+  if (semantic) {
+    const roots = semantic.root_css ? document.querySelectorAll(semantic.root_css) : [document.body];
+    if (roots.length !== 1 || !roots[0]) throw new Error("Semantic root must match exactly one element.");
+    const nodes = [];
+    let visited = 0, truncated = false;
+    const maxNodes = semantic.max_nodes ?? 64;
+    const maxDepth = semantic.max_depth ?? 8;
+    const structural = { BODY: "document", MAIN: "main", NAV: "navigation", HEADER: "banner", FOOTER: "contentinfo", FORM: "form", FIELDSET: "group", UL: "list", OL: "list", LI: "listitem", TABLE: "table", TR: "row", TH: "columnheader", TD: "cell", SECTION: "region", ARTICLE: "article", IMG: "img" };
+    function walk(element, parent, depth) {
+      if (++visited > 4000 || nodes.length >= maxNodes) { truncated = true; return; }
+      if (element.closest("[hidden],[inert],[aria-hidden='true']")) return;
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility !== "visible") return;
+      const control = summarize(element);
+      const heading = /^H[1-6]$/.test(element.tagName);
+      const interactive = element.matches("button,a[href],input,textarea,select,[role],[tabindex],[contenteditable='true']");
+      const role = (element.hasAttribute("role") ? roleOf(element) : null) || (heading ? "heading" : structural[element.tagName] || (interactive ? roleOf(element) : null));
+      let nextParent = parent, nextDepth = depth;
+      if (role) {
+        if (depth > maxDepth) { truncated = true; return; }
+        const ref = "s" + nodes.length;
+        const name = role === "document" ? compact(document.title) : (interactive || heading || role === "img" ? labelOf(element, role) : compact(element.getAttribute("aria-label") || element.getAttribute("title")));
+        const description = compact((element.getAttribute("aria-describedby") || "").split(/\s+/).map(id => document.getElementById(id)?.textContent || "").join(" "));
+        const state = { focused: document.activeElement === element, disabled: Boolean(element.disabled || element.closest("[aria-disabled='true']")) };
+        for (const key of ["checked", "expanded", "selected"]) {
+          const aria = element.getAttribute("aria-" + key);
+          if (["true", "false", ...(key === "checked" ? ["mixed"] : [])].includes(aria)) state[key] = aria;
+          else if (key in element && typeof element[key] === "boolean") state[key] = element[key];
+        }
+        const autocomplete = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+        const sensitive = element.matches("input[type='password']") || autocomplete.some(token => token.startsWith("cc-") || token.includes("password") || token === "one-time-code");
+        const value = sensitive ? undefined : (typeof element.value === "string" ? compact(element.value, 160) : undefined);
+        nodes.push({ ref, parent, role, name, description, ...state, ...(role === "heading" && heading ? { level: Number(element.tagName[1]) } : {}), ...(value !== undefined ? { value } : {}), ...(interactive && control ? { locators: control.locators, box: control.box, offscreen: control.offscreen } : {}) });
+        nextParent = ref; nextDepth = depth + 1;
+      }
+      // Light DOM only: frame and shadow content are deliberately not implied.
+      for (const child of element.children) {
+        if (visited >= 4000 || nodes.length >= maxNodes) { truncated = true; break; }
+        walk(child, nextParent, nextDepth);
+      }
+    }
+    walk(roots[0], null, 0);
+    for (const control of controls) {
+      const matches = nodes.filter(node => node.role === control.role && node.name === control.name && JSON.stringify(node.box) === JSON.stringify(control.box));
+      if (matches.length === 1) control.semantic_ref = matches[0].ref;
+    }
+    accessibility = { source: "bounded_dom_semantics", untrusted: true, nodes, truncated, visited_elements: visited, limits: { max_nodes: maxNodes, max_depth: maxDepth, scanned_elements: 4000 }, coverage: "Main-frame light DOM only; not the browser accessibility tree. CSS generated content, shadow roots and iframe documents are excluded. Names approximate HTML/ARIA semantics." };
+  }
   return {
+    ...(accessibility ? { accessibility } : {}),
     url: location.href,
     title: compact(document.title, 240),
     viewport,
