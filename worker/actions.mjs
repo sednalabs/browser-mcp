@@ -33,6 +33,7 @@ export function actionUsesCoordinates(action) {
 export function validateActions(actions, params) {
   for (const action of actions) {
     if (action.type === "navigate") validateUrl(action.url);
+    if (action.type === "set_files" && action.target.frame) throw new Rejected("File selection supports only a main-frame input.", "FILE_TARGET_UNSUPPORTED");
     if (actionUsesCoordinates(action) && !params.observation_id) {
       throw new Rejected("Coordinate input requires the observation_id from the latest browser_observe or browser_step.", "OBSERVATION_REQUIRED");
     }
@@ -168,6 +169,27 @@ export async function runAction(record, action, operation, state, options) {
     case "hover": {
       if (locator) await locator.hover({ timeout });
       else { const point = await coordinatePoint(page, action); await page.mouse.move(point.x, point.y); }
+      break;
+    }
+    case "set_files": {
+      const element = await locator.elementHandle({ timeout });
+      if (!element) throw new Rejected("File input was not found.", "FILE_TARGET_NOT_FOUND");
+      let payloads;
+      try {
+        const frame = await element.ownerFrame();
+        if (frame !== page.mainFrame()) throw new Rejected("File selection supports only a main-frame input.", "FILE_TARGET_UNSUPPORTED");
+        const input = await element.evaluate(el => ({ tag: el.tagName, type: el.type, multiple: el.multiple, connected: el.isConnected }));
+        if (!input.connected || input.tag !== "INPUT" || input.type !== "file") throw new Rejected("Target must be a connected file input.", "FILE_TARGET_UNSUPPORTED");
+        if (!input.multiple && action.handles.length > 1) throw new Rejected("Target does not allow multiple files.", "FILE_TARGET_MULTIPLE");
+        payloads = options.fileGrants.prepare(action.handles, new URL(frame.url()).origin);
+        operation.check();
+        // The same resolved element is used after origin validation. Choosing
+        // files can immediately transmit bytes in change handlers. Never retry.
+        await element.setInputFiles(payloads, { timeout: operation.timeout(options.actionTimeout) });
+      } finally {
+        for (const payload of payloads || []) payload.buffer.fill(0);
+        await element.dispose().catch(() => {});
+      }
       break;
     }
     case "fill": await locator.fill(action.text, { timeout }); break;
