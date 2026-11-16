@@ -1,15 +1,16 @@
 // Copyright 2026 Sedna Labs. SPDX-License-Identifier: Apache-2.0
 // Adapted and modified from Sedna/OpenAI Codex; see NOTICE and docs/provenance.md.
-import fs from "node:fs/promises";
-import path from "node:path";
+import { readManagedEndpoint } from "./cdp-endpoint.mjs";
 import { randomUUID } from "node:crypto";
 import Ajv from "ajv";
 import { chromium } from "playwright";
 import { tools } from "./schemas.mjs";
 import { Profile, redact, installServiceAuth } from "./config.mjs";
 import { Operation, Cancelled, Rejected } from "./operation.mjs";
+import { inspectReadingDOM } from "./reading.mjs";
 import { captureViewport } from "./capture.mjs";
 import { inspectDOM, geometryDOM, evaluateRead, sameGeometry } from "./dom.mjs";
+import { inspectElementGeometry } from "./element-geometry.mjs";
 import { Diagnostics } from "./diagnostics.mjs";
 import { validateActions, validateUrl, runAction, inputState, releaseInput, assertObservation } from "./actions.mjs";
 import { DialogBlocked, runWithDialogFence, settleDialogInput } from "./modal.mjs";
@@ -204,7 +205,7 @@ export class BrowserRuntime {
     }
     if (method === "browser_step") return this.step(operation, record, params);
     if (method === "browser_review") return this.review(operation, record, params);
-    const observation = await this.tryObserve(record, params.controls_limit, params.semantic);
+    const observation = await this.tryObserve(record, params.controls_limit, params.semantic, params.reading, params.screenshot, params.element_geometry);
     operation.check();
     return jsonResult({
       operation_id: operation.id,
@@ -262,12 +263,7 @@ export class BrowserRuntime {
       if (!context.pages().length) this.registerPage(await context.newPage());
       await Promise.all([...this.pages.values()].map((record) => record.ready));
       if (this.config.cdp) {
-        const lines = (await fs.readFile(path.join(directory, "DevToolsActivePort"), "utf8")).trim().split(/\r?\n/);
-        const port = Number(lines[0]);
-        if (!Number.isInteger(port) || port < 1 || port > 65535 || !/^\/devtools\/browser\/[a-z0-9-]+$/i.test(lines[1])) {
-          throw new Error("Chrome did not report a valid managed debugging endpoint.");
-        }
-        this.endpoint = "ws://127.0.0.1:" + port + lines[1];
+        this.endpoint = await readManagedEndpoint(directory, { isAlive: () => this.context === context });
       }
       return context;
     } catch (error) { await this.closeBrowser(); throw error; }
@@ -427,12 +423,22 @@ export class BrowserRuntime {
     }, observation.images, operation.controller.signal.aborted);
   }
 
-  async observe(record, controlsLimit = 24, semantic) {
+  async observe(record, controlsLimit = 24, semantic, reading, screenshot = true, elementGeometry) {
+    if (!screenshot) return this.observeText(record, controlsLimit, semantic, reading ?? {}, elementGeometry);
     const navigationBefore = record.navigation;
+    let beforeReading = null;
+    if (reading && !record.dialog) {
+      try { beforeReading = await evaluateRead(record.page, inspectReadingDOM, reading); } catch {}
+    }
     let beforeSemantic = null;
     if (semantic && !record.dialog) {
       try { beforeSemantic = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic }); }
       catch { /* Preserve screenshots and receipts if optional inspection fails. */ }
+    }
+    let beforeElements = null;
+    if (elementGeometry && !record.dialog) {
+      try { beforeElements = await evaluateRead(record.page, inspectElementGeometry, elementGeometry); }
+      catch { /* Optional geometry must not discard action receipts or screenshots. */ }
     }
     const capture = await captureViewport(record.page, { hasDialog: () => Boolean(record.dialog) });
     const capturedAt = new Date().toISOString();
@@ -440,6 +446,14 @@ export class BrowserRuntime {
     const warnings = capture.warnings.map((message) => this.safe(message, 400));
     try { if (!record.dialog) summary = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic }); }
     catch (error) { warnings.push("Control map unavailable: " + this.safe(error.message, 300)); }
+    let readable;
+    if (reading && !record.dialog) {
+      try {
+        const afterReading = await evaluateRead(record.page, inspectReadingDOM, reading);
+        if (beforeReading && navigationBefore === record.navigation && JSON.stringify(beforeReading) === JSON.stringify(afterReading)) readable = afterReading;
+        else warnings.push("Readable content changed during capture or could not be verified; content withheld.");
+      } catch (error) { warnings.push("Readable content unavailable: " + this.safe(error.message, 300)); }
+    }
     const observationId = this.instanceId + ":o" + (++this.nextObservation);
     const semanticStable = !semantic || Boolean(beforeSemantic && summary && JSON.stringify(beforeSemantic) === JSON.stringify(summary));
     if (!semanticStable) warnings.push("Page semantics changed during capture; semantic snapshot withheld. Observe again before acting.");
@@ -453,14 +467,36 @@ export class BrowserRuntime {
         summary.accessibility.consistency = "matching_bounded_reads_before_and_after_capture_not_atomic";
       }
     }
-    const actionable = semanticStable && capture.geometry.stable_geometry && navigationBefore === record.navigation &&
+    let elements = null;
+    if (elementGeometry && !record.dialog) {
+      try { elements = await evaluateRead(record.page, inspectElementGeometry, elementGeometry); }
+      catch { /* Report unavailable below without exposing selector/page content in errors. */ }
+    }
+    const elementsStable = !elementGeometry || Boolean(beforeElements && elements && JSON.stringify(beforeElements) === JSON.stringify(elements) &&
+      navigationBefore === record.navigation && capture.geometry.stable_geometry &&
+      elements.device_pixel_ratio === capture.geometry.device_pixel_ratio &&
+      elements.viewport.width === capture.geometry.viewport.width && elements.viewport.height === capture.geometry.viewport.height &&
+      Math.abs(elements.scroll.x - capture.geometry.scroll.x) < 1 && Math.abs(elements.scroll.y - capture.geometry.scroll.y) < 1);
+    if (!elementsStable) {
+      elements = null;
+      warnings.push("Element geometry unavailable or changed during capture; geometry withheld. Observe again before acting.");
+    }
+    if (elements) {
+      elements.observation_id = observationId;
+      elements.page_id = record.id;
+      elements.consistency = "matching_bounded_reads_before_and_after_capture_not_atomic";
+    }
+    const actionable = elementsStable && semanticStable && capture.geometry.stable_geometry && navigationBefore === record.navigation &&
       (!summary || sameGeometry(capture.geometry, summary));
     record.lastObservation = { id: observationId, navigation: record.navigation, geometry: capture.geometry, actionable };
     return {
       data: {
         page_id: record.id, target_id: record.targetId, browser_instance_id: this.instanceId,
         observation_id: observationId, captured_at: capturedAt, actionable,
+        screenshot_captured: true,
+        ...(readable ? { reading: { ...this.safeData(readable), observation_id: observationId, consistency: "matching_bounded_reads_before_and_after_capture_not_atomic" } } : {}),
         geometry: this.safeData(capture.geometry),
+        ...(elements ? { element_geometry: this.safeData(elements) } : {}),
         ...(summary ? { page: this.safeData(summary) } : {}),
         dialog: record.dialog ? { type: record.dialog.type(), message: this.safe(record.dialog.message(), 600) } : null,
         ...(record.lastDialogRecovery ? { dialog_recovery: record.lastDialogRecovery } : {}),
@@ -471,12 +507,40 @@ export class BrowserRuntime {
     };
   }
 
-  async tryObserve(record, controlsLimit, semantic) {
-    try { return await this.observe(record, controlsLimit, semantic); }
+  async observeText(record, controlsLimit, semantic, reading, elementGeometry) {
+    // A text-only read deliberately invalidates old pixel coordinates. Semantic
+    // actions remain available without an observation_id; no screenshot is taken.
+    record.lastObservation = null;
+    if (record.dialog) throw new Rejected("Text inspection is unavailable while a native dialog is open.", "DIALOG_OPEN");
+    const navigation = record.navigation;
+    const page = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic });
+    const readable = await evaluateRead(record.page, inspectReadingDOM, reading);
+    const elements = elementGeometry ? await evaluateRead(record.page, inspectElementGeometry, elementGeometry) : null;
+    if (navigation !== record.navigation) throw new Rejected("Page navigated during text inspection; observe again.", "STALE_OBSERVATION");
+    const observationId = this.instanceId + ":o" + (++this.nextObservation);
+    if (page.accessibility) {
+      page.accessibility.observation_id = observationId;
+      page.accessibility.consistency = "single_bounded_read_not_atomic_with_other_sections";
+    }
+    record.lastObservation = { id: observationId, navigation, actionable: false };
+    return { data: {
+      page_id: record.id, target_id: record.targetId, browser_instance_id: this.instanceId,
+      observation_id: observationId, captured_at: new Date().toISOString(),
+      actionable: false, screenshot_captured: false, page: this.safeData(page),
+      ...(elements ? { element_geometry: { ...this.safeData(elements), page_id: record.id, observation_id: observationId, consistency: "single_bounded_read_not_atomic_with_other_sections" } } : {}),
+      reading: { ...this.safeData(readable), observation_id: observationId, consistency: "single_bounded_read_not_atomic_with_other_sections" },
+      warnings: ["Text-only observation cannot authorize coordinate actions. Use semantic targets without observation_id, or capture a new screenshot."],
+      images: [],
+    }, images: [] };
+  }
+
+  async tryObserve(record, controlsLimit, semantic, reading, screenshot, elementGeometry) {
+    try { return await this.observe(record, controlsLimit, semantic, reading, screenshot, elementGeometry); }
     catch (error) {
       record.lastObservation = null;
       return { data: {
         page_id: record.id,
+        ...(screenshot === false ? { screenshot_captured: false, actionable: false, images: [] } : {}),
         dialog: record.dialog ? { type: record.dialog.type(), message: this.safe(record.dialog.message(), 600) } : null,
         observation_unavailable: { message: this.safe(error.message), page_closed: record.page.isClosed() },
       }, images: [] };
@@ -519,7 +583,7 @@ export class BrowserRuntime {
     }
     // Cancellation never abandons a running Playwright promise. Input cleanup
     // and this final observation settle while the same FIFO queue remains held.
-    const observation = await this.tryObserve(record, undefined, params.semantic);
+    const observation = await this.tryObserve(record, undefined, params.semantic, params.reading, params.screenshot, params.element_geometry);
     const cancelled = operation.controller.signal.aborted;
     const status = cancelled ? "cancelled" : failure instanceof DialogBlocked ? "blocked" : failure ? failure instanceof Rejected && actions.every((a) => a.status === "not_started") ? "rejected" : "failed" : "completed";
     return jsonResult({

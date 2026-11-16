@@ -70,6 +70,19 @@ test('modern MCP controls a continuous real browser with typed images and honest
     page.on('dialog', () => {});
   });
 
+  await t.test('delivers bounded reading as text-only MCP content without pixels', async () => {
+    const result = await client.call('browser_observe', { page_id: pageId, screenshot: false, reading: { max_chars: 200, max_blocks: 8 } });
+    const data = successful(result);
+    assert.equal(result.content.filter(block => block.type === 'image').length, 0);
+    assert.equal(data.screenshot_captured, false);
+    assert.equal(data.actionable, false);
+    assert.ok(data.reading.coverage.returned_chars <= 200);
+    assert.equal(data.reading.coverage.continuation, false);
+    const stale = textPayload(await client.call('browser_step', { page_id: pageId, observation_id: data.observation_id, screenshot: false, actions: [{ type: 'click', x: 1, y: 1 }] }));
+    assert.equal(stale.status, 'rejected');
+    latest = successful(await client.call('browser_observe', { page_id: pageId }));
+  });
+
   await t.test('delivers optional bounded semantic content with a native MCP image', async () => {
     const result = await client.call('browser_observe', { page_id: pageId, semantic: {} });
     latest = successful(result);

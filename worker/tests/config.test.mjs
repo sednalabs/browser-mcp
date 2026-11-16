@@ -242,3 +242,13 @@ test("invalid scalar action arguments remain rejected without browser effects", 
     assert.equal(runtime.status().profile_reserved, false);
   }
 });
+
+test("reading bounds and screenshot mode reject invalid requests before effects", async t => {
+  const runtime = new BrowserRuntime(await loadConfig({}));
+  t.after(() => runtime.dispose());
+  for (const [id, args] of [{ reading: { max_chars: 16001 } }, { reading: { max_blocks: 129 } }, { screenshot: 'false' }, { reading: { cursor: 'old' } }].entries()) {
+    const data = JSON.parse((await runtime.call('reading-invalid-' + id, 'browser_observe', args)).content[0].text);
+    assert.equal(data.status, 'rejected');
+    assert.equal(runtime.status().profile_reserved, false);
+  }
+});
