@@ -78,23 +78,37 @@ pub fn tool_definitions() -> Result<Vec<Tool>, String> {
                 "Manage your authenticated browser leases. Create allocates a private live browser lazily and returns browser_session_id; list shows only your leases. Pass that ID on every later tool call. Status reconciles last_operation after a lost/cancelled response. Reset discards transient browser state; close terminates the worker and releases its profile. Neither HTTP reconnect nor OAuth token refresh changes browser identity. Leases are bounded and do not survive service restart."
             );
         } else {
-            schema["properties"]
-                .as_object_mut()
-                .ok_or("Invalid schema properties")?
-                .insert(
-                    "browser_session_id".into(),
-                    json!({"type":"string","pattern":"^b_[0-9a-f]{32}$"}),
-                );
-            let object = schema.as_object_mut().ok_or("Invalid schema")?;
-            object
-                .entry("required")
-                .or_insert_with(|| json!([]))
-                .as_array_mut()
-                .ok_or("Invalid required list")?
-                .push(json!("browser_session_id"));
+            add_application_lease(schema)?;
+            // Closed discriminated object variants must also admit the routing
+            // field; otherwise HTTP calls fail additionalProperties validation.
+            if let Some(variants) = schema.get_mut("oneOf") {
+                for variant in variants.as_array_mut().ok_or("Invalid schema variants")? {
+                    add_application_lease(variant)?;
+                }
+            }
         }
     }
     serde_json::from_value(catalog).map_err(|e| e.to_string())
+}
+
+fn add_application_lease(schema: &mut Value) -> Result<(), String> {
+    let object = schema.as_object_mut().ok_or("Invalid schema")?;
+    object
+        .entry("properties")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("Invalid schema properties")?
+        .insert(
+            "browser_session_id".into(),
+            json!({"type":"string","pattern":"^b_[0-9a-f]{32}$"}),
+        );
+    object
+        .entry("required")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or("Invalid required list")?
+        .push(json!("browser_session_id"));
+    Ok(())
 }
 
 /// Starts native TLS when configured; otherwise binds a loopback-only listener
@@ -422,6 +436,21 @@ mod tests {
         assert_eq!(catalog.len(), 6);
         for tool in catalog {
             let value = serde_json::to_value(tool).unwrap();
+            if value["name"] == "browser_tabs" {
+                let variants = value["inputSchema"]["oneOf"].as_array().unwrap();
+                assert_eq!(variants.len(), 4);
+                for variant in variants {
+                    assert_eq!(variant["additionalProperties"], json!(false));
+                    assert_eq!(
+                        variant["properties"]["browser_session_id"]["pattern"],
+                        json!("^b_[0-9a-f]{32}$")
+                    );
+                    assert!(variant["required"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("browser_session_id")));
+                }
+            }
             if value["name"] != "browser_session" {
                 assert!(
                     value["inputSchema"]["required"]
