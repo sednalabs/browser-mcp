@@ -126,3 +126,15 @@ required root files. It excludes `.git`, Cargo targets, npm dependencies,
 The ZIP has one `sedna-browser-mcp/` root and can be used for the first Git commit.
 It is source, not a prebuilt offline runtime; setup requires access to the pinned
 Git/Cargo/npm sources and the browser download origin.
+
+## Navigation cancellation
+
+Navigation actions use the configured action deadline. On cancellation or failure,
+the worker requests `Page.stopLoading` through a dedicated CDP session before
+final observation. It waits for the original navigation promise and the stop
+request to settle; it does not race away from an in-flight mutation, replay the
+action, or classify an interrupted navigation as having no effects. The stop
+request has a two-second deadline that detaches its dedicated session. If the
+browser remains unresponsive, the existing host cancellation grace and worker
+retirement still apply. A later observation can establish current page state,
+not whether an interrupted request had external effects.

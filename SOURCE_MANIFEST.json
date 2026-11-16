@@ -78,6 +78,7 @@
     "worker/tests/element-geometry-browser.test.mjs",
     "worker/tests/element-geometry.test.mjs",
     "worker/tests/http-profile.test.mjs",
+    "worker/tests/navigation.test.mjs",
     "worker/tests/runtime.test.mjs",
     "worker/tools.json"
   ]
