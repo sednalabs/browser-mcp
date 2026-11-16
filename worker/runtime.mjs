@@ -9,6 +9,7 @@ import { Profile, redact, installServiceAuth } from "./config.mjs";
 import { Operation, Cancelled, Rejected } from "./operation.mjs";
 import { captureViewport } from "./capture.mjs";
 import { inspectDOM, geometryDOM, evaluateRead, sameGeometry } from "./dom.mjs";
+import { inspectElementGeometry } from "./element-geometry.mjs";
 import { Diagnostics } from "./diagnostics.mjs";
 import { validateActions, validateUrl, runAction, inputState, releaseInput, assertObservation } from "./actions.mjs";
 import { DialogBlocked, runWithDialogFence, settleDialogInput } from "./modal.mjs";
@@ -203,7 +204,7 @@ export class BrowserRuntime {
     }
     if (method === "browser_step") return this.step(operation, record, params);
     if (method === "browser_review") return this.review(operation, record, params);
-    const observation = await this.tryObserve(record, params.controls_limit, params.semantic);
+    const observation = await this.tryObserve(record, params.controls_limit, params.semantic, params.element_geometry);
     operation.check();
     return jsonResult({
       operation_id: operation.id,
@@ -421,12 +422,17 @@ export class BrowserRuntime {
     }, observation.images, operation.controller.signal.aborted);
   }
 
-  async observe(record, controlsLimit = 24, semantic) {
+  async observe(record, controlsLimit = 24, semantic, elementGeometry) {
     const navigationBefore = record.navigation;
     let beforeSemantic = null;
     if (semantic && !record.dialog) {
       try { beforeSemantic = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic }); }
       catch { /* Preserve screenshots and receipts if optional inspection fails. */ }
+    }
+    let beforeElements = null;
+    if (elementGeometry && !record.dialog) {
+      try { beforeElements = await evaluateRead(record.page, inspectElementGeometry, elementGeometry); }
+      catch { /* Optional geometry must not discard action receipts or screenshots. */ }
     }
     const capture = await captureViewport(record.page, { hasDialog: () => Boolean(record.dialog) });
     const capturedAt = new Date().toISOString();
@@ -447,7 +453,26 @@ export class BrowserRuntime {
         summary.accessibility.consistency = "matching_bounded_reads_before_and_after_capture_not_atomic";
       }
     }
-    const actionable = semanticStable && capture.geometry.stable_geometry && navigationBefore === record.navigation &&
+    let elements = null;
+    if (elementGeometry && !record.dialog) {
+      try { elements = await evaluateRead(record.page, inspectElementGeometry, elementGeometry); }
+      catch { /* Report unavailable below without exposing selector/page content in errors. */ }
+    }
+    const elementsStable = !elementGeometry || Boolean(beforeElements && elements && JSON.stringify(beforeElements) === JSON.stringify(elements) &&
+      navigationBefore === record.navigation && capture.geometry.stable_geometry &&
+      elements.device_pixel_ratio === capture.geometry.device_pixel_ratio &&
+      elements.viewport.width === capture.geometry.viewport.width && elements.viewport.height === capture.geometry.viewport.height &&
+      Math.abs(elements.scroll.x - capture.geometry.scroll.x) < 1 && Math.abs(elements.scroll.y - capture.geometry.scroll.y) < 1);
+    if (!elementsStable) {
+      elements = null;
+      warnings.push("Element geometry unavailable or changed during capture; geometry withheld. Observe again before acting.");
+    }
+    if (elements) {
+      elements.observation_id = observationId;
+      elements.page_id = record.id;
+      elements.consistency = "matching_bounded_reads_before_and_after_capture_not_atomic";
+    }
+    const actionable = elementsStable && semanticStable && capture.geometry.stable_geometry && navigationBefore === record.navigation &&
       (!summary || sameGeometry(capture.geometry, summary));
     record.lastObservation = { id: observationId, navigation: record.navigation, geometry: capture.geometry, actionable };
     return {
@@ -455,6 +480,7 @@ export class BrowserRuntime {
         page_id: record.id, target_id: record.targetId, browser_instance_id: this.instanceId,
         observation_id: observationId, captured_at: capturedAt, actionable,
         geometry: this.safeData(capture.geometry),
+        ...(elements ? { element_geometry: this.safeData(elements) } : {}),
         ...(summary ? { page: this.safeData(summary) } : {}),
         dialog: record.dialog ? { type: record.dialog.type(), message: this.safe(record.dialog.message(), 600) } : null,
         ...(record.lastDialogRecovery ? { dialog_recovery: record.lastDialogRecovery } : {}),
@@ -465,8 +491,8 @@ export class BrowserRuntime {
     };
   }
 
-  async tryObserve(record, controlsLimit, semantic) {
-    try { return await this.observe(record, controlsLimit, semantic); }
+  async tryObserve(record, controlsLimit, semantic, elementGeometry) {
+    try { return await this.observe(record, controlsLimit, semantic, elementGeometry); }
     catch (error) {
       record.lastObservation = null;
       return { data: {
@@ -513,7 +539,7 @@ export class BrowserRuntime {
     }
     // Cancellation never abandons a running Playwright promise. Input cleanup
     // and this final observation settle while the same FIFO queue remains held.
-    const observation = await this.tryObserve(record, undefined, params.semantic);
+    const observation = await this.tryObserve(record, undefined, params.semantic, params.element_geometry);
     const cancelled = operation.controller.signal.aborted;
     const status = cancelled ? "cancelled" : failure instanceof DialogBlocked ? "blocked" : failure ? failure instanceof Rejected && actions.every((a) => a.status === "not_started") ? "rejected" : "failed" : "completed";
     return jsonResult({
