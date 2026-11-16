@@ -101,3 +101,23 @@ appropriately isolated environment. The optional CDP endpoint stays private.
 The initial server retains stdio compatibility for MCP 2025-11-25 and targets
 MCP 2026-07-28 via the maintained RMCP 3.5.1 source. Version support is not a
 claim that this HTTP candidate has already passed its required integration tests.
+
+### Bounded element geometry
+
+For non-control layout checks (for example a clipped advertisement), pass
+`element_geometry: { selectors: ["#ad", "#container"], max_matches: 8 }` to
+`browser_observe` or `browser_step`. It is opt-in, limited to eight CSS selectors
+of at most 1,000 characters each and at most 16 matches per selector (default 8).
+Results use selector/match indices rather than echoing selectors or page text.
+Each match includes a viewport-CSS-pixel rectangle, client/scroll dimensions,
+computed overflow and visibility, and the same measurements for its immediate
+parent. Missing and invalid selectors are explicit; a truncated flag means more
+matches existed. No form values or arbitrary JavaScript are returned/accepted.
+
+This read does not scroll, resize, focus or navigate. It stays in the chosen page's
+main-frame light DOM; it cannot enter iframe documents or shadow roots. Visibility
+is not proof of being unobscured or unclipped. Compare parent/viewport/scroll bounds
+and the screenshot. Geometry carries the page and observation IDs and is withheld
+if bounded before/after reads or capture geometry disagree. Matching reads are
+not an atomic snapshot and must not be treated as a guarantee against later layout
+changes. Inspect again before acting on stale measurements.
