@@ -146,7 +146,18 @@ export class BrowserRuntime {
       const validate = validators.get(method);
       if (!validate) throw new Rejected("Unknown browser method.", "UNKNOWN_METHOD");
       if (!validate(params)) {
-        const message = validate.errors.slice(0, 4).map((error) => error.instancePath + " " + error.message).join("; ");
+        let errors = validate.errors;
+        if (method === "browser_step" && Array.isArray(params?.actions)) {
+          const variants = tools.find(tool => tool.name === method).inputSchema.properties.actions.items.oneOf;
+          errors = errors.filter(error => {
+            const match = error.schemaPath.match(/^#\/properties\/actions\/items\/oneOf\/(\d+)\//);
+            const actionIndex = error.instancePath.match(/^\/actions\/(\d+)/)?.[1];
+            if (!match || actionIndex === undefined) return error.keyword !== "oneOf";
+            return variants[Number(match[1])].properties.type.const === params.actions[Number(actionIndex)]?.type;
+          });
+          if (!errors.length) errors = [{ instancePath: "/actions", message: "contains an unsupported action type; use a type from the advertised action catalogue" }];
+        }
+        const message = errors.slice(0, 4).map((error) => error.instancePath + " " + error.message).join("; ");
         throw new Rejected("Invalid arguments: " + message);
       }
       if (method === "browser_step") validateActions(params.actions, params);
@@ -193,7 +204,7 @@ export class BrowserRuntime {
     }
     if (method === "browser_step") return this.step(operation, record, params);
     if (method === "browser_review") return this.review(operation, record, params);
-    const observation = await this.tryObserve(record, params.controls_limit);
+    const observation = await this.tryObserve(record, params.controls_limit, params.semantic);
     operation.check();
     return jsonResult({
       operation_id: operation.id,
@@ -416,16 +427,33 @@ export class BrowserRuntime {
     }, observation.images, operation.controller.signal.aborted);
   }
 
-  async observe(record, controlsLimit = 24) {
+  async observe(record, controlsLimit = 24, semantic) {
     const navigationBefore = record.navigation;
+    let beforeSemantic = null;
+    if (semantic && !record.dialog) {
+      try { beforeSemantic = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic }); }
+      catch { /* Preserve screenshots and receipts if optional inspection fails. */ }
+    }
     const capture = await captureViewport(record.page, { hasDialog: () => Boolean(record.dialog) });
     const capturedAt = new Date().toISOString();
     let summary;
     const warnings = capture.warnings.map((message) => this.safe(message, 400));
-    try { if (!record.dialog) summary = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit }); }
+    try { if (!record.dialog) summary = await evaluateRead(record.page, inspectDOM, { limit: controlsLimit, semantic }); }
     catch (error) { warnings.push("Control map unavailable: " + this.safe(error.message, 300)); }
     const observationId = this.instanceId + ":o" + (++this.nextObservation);
-    const actionable = capture.geometry.stable_geometry && navigationBefore === record.navigation &&
+    const semanticStable = !semantic || Boolean(beforeSemantic && summary && JSON.stringify(beforeSemantic) === JSON.stringify(summary));
+    if (!semanticStable) warnings.push("Page semantics changed during capture; semantic snapshot withheld. Observe again before acting.");
+    if (summary?.accessibility) {
+      if (!semanticStable) {
+        delete summary.accessibility;
+        for (const control of summary.controls) delete control.semantic_ref;
+      }
+      else {
+        summary.accessibility.observation_id = observationId;
+        summary.accessibility.consistency = "matching_bounded_reads_before_and_after_capture_not_atomic";
+      }
+    }
+    const actionable = semanticStable && capture.geometry.stable_geometry && navigationBefore === record.navigation &&
       (!summary || sameGeometry(capture.geometry, summary));
     record.lastObservation = { id: observationId, navigation: record.navigation, geometry: capture.geometry, actionable };
     return {
@@ -443,8 +471,8 @@ export class BrowserRuntime {
     };
   }
 
-  async tryObserve(record, controlsLimit) {
-    try { return await this.observe(record, controlsLimit); }
+  async tryObserve(record, controlsLimit, semantic) {
+    try { return await this.observe(record, controlsLimit, semantic); }
     catch (error) {
       record.lastObservation = null;
       return { data: {
@@ -491,7 +519,7 @@ export class BrowserRuntime {
     }
     // Cancellation never abandons a running Playwright promise. Input cleanup
     // and this final observation settle while the same FIFO queue remains held.
-    const observation = await this.tryObserve(record);
+    const observation = await this.tryObserve(record, undefined, params.semantic);
     const cancelled = operation.controller.signal.aborted;
     const status = cancelled ? "cancelled" : failure instanceof DialogBlocked ? "blocked" : failure ? failure instanceof Rejected && actions.every((a) => a.status === "not_started") ? "rejected" : "failed" : "completed";
     return jsonResult({
