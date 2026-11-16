@@ -70,6 +70,7 @@ export class BrowserRuntime {
       node_version: process.version,
       profile_kind: this.profile.temporary ? "private_temporary" : "explicit_persistent",
       profile_reserved: Boolean(this.profile.directory),
+      file_grants: this.config.fileGrants?.describe() ?? [],
       service_auth: this.config.serviceAuth ? { name: this.config.serviceAuth.name, origin_count: this.config.serviceAuth.origins.size } : null,
       last_operation: this.lastOperation,
       pending_dialogs: [...this.pages.values()].filter((record) => record.dialog || record.pendingInput).map((record) => ({
@@ -161,7 +162,13 @@ export class BrowserRuntime {
         const message = errors.slice(0, 4).map((error) => error.instancePath + " " + error.message).join("; ");
         throw new Rejected("Invalid arguments: " + message);
       }
-      if (method === "browser_step") validateActions(params.actions, params);
+      if (method === "browser_step") {
+        validateActions(params.actions, params);
+        for (const action of params.actions) if (action.type === "set_files") {
+          if (!this.config.fileGrants) throw new Rejected("File selection is disabled.", "FILE_GRANT_DISABLED");
+          this.config.fileGrants.validateHandles(action.handles);
+        }
+      }
       if (method === "browser_tabs" && params.action === "new" && params.url) validateUrl(params.url);
     }
     if (method === "shutdown") {
@@ -246,6 +253,7 @@ export class BrowserRuntime {
     context.on("page", (page) => this.registerPage(page));
     context.on("close", () => {
       if (this.context === context) {
+        this.config.fileGrants?.revoke();
         this.lifecycle = this.expectedClosures.has(context) ? "closed" : "lost";
         this.context = null;
         this.endpoint = null;
@@ -560,7 +568,7 @@ export class BrowserRuntime {
         const action = params.actions[index];
         actions[index].status = "started";
         try {
-          const execute = () => runAction(record, action, operation, held, { actionTimeout: this.config.actionTimeout, observationId: params.observation_id });
+          const execute = () => runAction(record, action, operation, held, { actionTimeout: this.config.actionTimeout, observationId: params.observation_id, fileGrants: this.config.fileGrants });
           if (action.type === "dialog") {
             await execute();
             const recovery = await settleDialogInput(record);
@@ -649,6 +657,7 @@ export class BrowserRuntime {
   }
 
   async closeBrowser() {
+    this.config.fileGrants?.revoke();
     const context = this.context;
     this.lifecycle = "closed";
     if (!context) return;

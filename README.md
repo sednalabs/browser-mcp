@@ -127,3 +127,9 @@ and the screenshot. Geometry carries the page and observation IDs and is withhel
 if bounded before/after reads or capture geometry disagree. Matching reads are
 not an atomic snapshot and must not be treated as a guarantee against later layout
 changes. Inspect again before acting on stale measurements.
+
+## Granted file selection
+
+Stdio operators can grant immutable bounded file snapshots for explicit `set_files`
+actions. Selection may immediately upload bytes; grants do not replace user consent.
+Disabled by default and unavailable to HTTP leases. See [file-selection boundaries](docs/file-selection.md).
