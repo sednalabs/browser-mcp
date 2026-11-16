@@ -12,7 +12,7 @@ import { captureViewport } from "./capture.mjs";
 import { inspectDOM, geometryDOM, evaluateRead, sameGeometry } from "./dom.mjs";
 import { inspectElementGeometry } from "./element-geometry.mjs";
 import { Diagnostics } from "./diagnostics.mjs";
-import { validateActions, validateUrl, runAction, inputState, releaseInput, assertObservation } from "./actions.mjs";
+import { validateActions, validateUrl, runAction, runNavigation, inputState, releaseInput, assertObservation } from "./actions.mjs";
 import { DialogBlocked, runWithDialogFence, settleDialogInput } from "./modal.mjs";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -395,7 +395,7 @@ export class BrowserRuntime {
       this.currentPageId = record.id;
       await record.ready;
       if (params.url) {
-        try { await record.page.goto(validateUrl(params.url), { waitUntil: "domcontentloaded", timeout: operation.timeout(this.config.actionTimeout) }); }
+        try { await runNavigation(record.page, operation, () => record.page.goto(validateUrl(params.url), { waitUntil: "domcontentloaded", timeout: operation.timeout(this.config.actionTimeout) })); }
         catch (error) {
           const observation = await this.tryObserve(record);
           return jsonResult({
