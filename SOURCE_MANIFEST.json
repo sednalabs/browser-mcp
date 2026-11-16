@@ -76,6 +76,7 @@
     "worker/tests/http-profile.test.mjs",
     "worker/tests/navigation.test.mjs",
     "worker/tests/runtime.test.mjs",
+    "worker/tests/tabs-schema.test.mjs",
     "worker/tools.json"
   ]
 }

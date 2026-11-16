@@ -98,14 +98,15 @@ export const tools = [
   },
   {
     name: "browser_tabs",
-    description: "List, create, select or close tabs in this browser session. IDs include the session generation; stale IDs are rejected. Listing includes exact Chrome target IDs for diagnostic integration. new/select return a fresh inline screenshot; creating a page defaults to about:blank.",
+    description: 'Manage tabs in this browser session: {action:"list"}; {action:"new",url?:string}; {action:"select",page_id:string}; {action:"close",page_id:string}. Only new accepts url (1–8000 characters, default about:blank). Select and close require an exact page_id (1–100 characters) returned by this session; stale IDs are rejected. Listing includes exact Chrome target IDs for diagnostic integration. New/select return a fresh inline screenshot.',
     annotations: hints(false, true),
     inputSchema: {
-      ...object({ action: { enum: ["list", "new", "select", "close"] }, page_id: pageId, url: str(8000) }, ["action"]),
-      allOf: [
-        { if: { properties: { action: { enum: ["select", "close"] } } }, then: { required: ["page_id"] } },
-        { if: { properties: { action: { enum: ["list", "new"] } } }, then: { not: { required: ["page_id"] } } },
-        { if: { properties: { action: { enum: ["list", "select", "close"] } } }, then: { not: { required: ["url"] } } },
+      type: "object",
+      oneOf: [
+        object({ action: { const: "list" } }, ["action"]),
+        object({ action: { const: "new" }, url: str(8000) }, ["action"]),
+        object({ action: { const: "select" }, page_id: pageId }, ["action", "page_id"]),
+        object({ action: { const: "close" }, page_id: pageId }, ["action", "page_id"]),
       ],
     },
   },

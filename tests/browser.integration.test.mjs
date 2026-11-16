@@ -38,6 +38,10 @@ test('modern MCP controls a continuous real browser with typed images and honest
     assert.equal(catalog.result.cacheScope, 'private');
     assert.equal(catalog.result.resultType, 'complete');
     assert.equal(catalog.result.tools.find(tool => tool.name === 'browser_step').annotations.destructiveHint, true);
+    const tabsSchema = catalog.result.tools.find(tool => tool.name === 'browser_tabs').inputSchema;
+    assert.deepEqual(tabsSchema.oneOf.map(branch => branch.properties.action.const), ['list', 'new', 'select', 'close']);
+    assert.equal(tabsSchema.allOf, undefined);
+    assert.deepEqual(tabsSchema.oneOf[2].required, ['action', 'page_id']);
     const status = successful(await client.call('browser_session', { action: 'status' }));
     assert.equal(status.running, false);
     assert.equal(status.browser_instance_id, null);
