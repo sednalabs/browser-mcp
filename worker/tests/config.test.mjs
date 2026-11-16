@@ -231,3 +231,14 @@ test("action validation reports the selected union branch without running earlie
     assert.equal(runtime.status().profile_reserved, false);
   }
 });
+
+test("invalid scalar action arguments remain rejected without browser effects", async t => {
+  const runtime = new BrowserRuntime(await loadConfig({}));
+  t.after(() => runtime.dispose());
+  let id = 0;
+  for (const args of [null, false, 42, "invalid"]) {
+    const data = JSON.parse((await runtime.call(++id, "browser_step", args)).content[0].text);
+    assert.equal(data.status, "rejected");
+    assert.equal(runtime.status().profile_reserved, false);
+  }
+});

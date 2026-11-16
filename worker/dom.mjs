@@ -20,6 +20,26 @@ export function inspectDOM({ limit = 24, semantic } = {}) {
     }
     return tag;
   }
+  function visibleText(element) {
+    let text = "", visited = 0;
+    function walk(node) {
+      if (++visited > 4000 || text.length >= 1000) return;
+      if (node.nodeType === 3) { text += node.textContent; return; }
+      if (node.nodeType !== 1 || node.matches("script,style,[hidden],[inert],[aria-hidden='true']")) return;
+      const style = getComputedStyle(node);
+      if (style.display === "none" || style.visibility !== "visible") return;
+      if (node.tagName === "BR") { text += " "; return; }
+      const boundary = !["inline", "inline-block", "inline-flex", "inline-grid", "contents"].includes(style.display);
+      if (boundary) text += " ";
+      for (const child of node.childNodes) {
+        if (visited >= 4000 || text.length >= 1000) break;
+        walk(child);
+      }
+      if (boundary) text += " ";
+    }
+    walk(element);
+    return compact(text);
+  }
   function labelOf(element, role) {
     const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\s+/)
       .map((id) => document.getElementById(id)?.textContent || "").join(" ");
@@ -29,7 +49,7 @@ export function inspectDOM({ limit = 24, semantic } = {}) {
     if (role === "textbox" || element.tagName === "SELECT" || element.isContentEditable) {
       return compact(element.getAttribute("placeholder") || element.getAttribute("title") || element.getAttribute("name") || element.id);
     }
-    return compact(element.textContent || element.innerText || element.getAttribute("alt") || element.getAttribute("title"));
+    return compact(visibleText(element) || element.getAttribute("alt") || element.getAttribute("title"));
   }
   function summarize(element) {
     if (element.closest("[hidden],[inert],[aria-hidden='true']")) return null;

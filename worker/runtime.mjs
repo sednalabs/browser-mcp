@@ -147,7 +147,7 @@ export class BrowserRuntime {
       if (!validate) throw new Rejected("Unknown browser method.", "UNKNOWN_METHOD");
       if (!validate(params)) {
         let errors = validate.errors;
-        if (method === "browser_step" && Array.isArray(params.actions)) {
+        if (method === "browser_step" && Array.isArray(params?.actions)) {
           const variants = tools.find(tool => tool.name === method).inputSchema.properties.actions.items.oneOf;
           errors = errors.filter(error => {
             const match = error.schemaPath.match(/^#\/properties\/actions\/items\/oneOf\/(\d+)\//);

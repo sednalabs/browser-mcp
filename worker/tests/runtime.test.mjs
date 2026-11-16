@@ -352,10 +352,18 @@ test("optional semantics preserve inline image, bounded hierarchy and fresh expa
   const plain = textOf(await runtime.call("semantic-off", "browser_observe", {}));
   assert.equal(plain.page.accessibility, undefined);
   const page = runtime.pages.get(data.page_id).page;
-  await page.setContent('<h1>Story</h1><a href="#older" style="text-transform:uppercase">Show older articles</a><form id="story"><label for="title">Title</label><input id="title" value="Draft"><input type="password" value="secret"><input autocomplete="section-payment cc-number" value="card-secret"><input autocomplete="billing CC-CSC" value="csc-secret"><section role="dialog" aria-label="Preview"><h2 role="button">Expand</h2></section><button aria-expanded="true">Insert Video</button><iframe srcdoc="<button>Inside frame</button>"></iframe><div id="shadow"></div></form>');
+  await page.setContent('<h1>Story</h1><button id="line">Save<br>draft</button><button id="block">Save<span style="display:block">copy</span></button><button id="save">Save<span hidden>internal</span><span style="display:none">private</span><span aria-hidden="true">decorative</span></button><a href="#older" style="text-transform:uppercase">Show older articles</a><form id="story"><label for="title">Title</label><input id="title" value="Draft"><input type="password" value="secret"><input autocomplete="section-payment cc-number" value="card-secret"><input autocomplete="billing CC-CSC" value="csc-secret"><section role="dialog" aria-label="Preview"><h2 role="button">Expand</h2></section><button aria-expanded="true">Insert Video</button><iframe srcdoc="<button>Inside frame</button>"></iframe><div id="shadow"></div></form>');
   await page.evaluate(() => document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML = '<button>Inside shadow</button>');
   const form = textOf(await runtime.call("semantic-form", "browser_observe", { semantic: {} }));
   assert.ok(form.page.accessibility.nodes.some(n => n.role === "form"));
+  const save = form.page.controls.find(n => n.locators.some(l => l.css === "#save"));
+  assert.equal(save.name, "Save");
+  assert.equal(await page.getByRole("button", { name: save.name, exact: true }).count(), 1);
+  for (const [selector, name] of [["#line", "Save draft"], ["#block", "Save copy"]]) {
+    const control = form.page.controls.find(n => n.locators.some(l => l.css === selector));
+    assert.equal(control.name, name);
+    assert.equal(await page.getByRole("button", { name: control.name, exact: true }).count(), 1);
+  }
   const older = form.page.controls.find(n => n.role === "link");
   assert.equal(older.name, "Show older articles");
   assert.equal(await page.getByRole("link", { name: older.name, exact: true }).count(), 1);
