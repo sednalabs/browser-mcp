@@ -1,7 +1,6 @@
 // Copyright 2026 Sedna Labs. SPDX-License-Identifier: Apache-2.0
 // Adapted and modified from Sedna/OpenAI Codex; see NOTICE and docs/provenance.md.
-import fs from "node:fs/promises";
-import path from "node:path";
+import { readManagedEndpoint } from "./cdp-endpoint.mjs";
 import { randomUUID } from "node:crypto";
 import Ajv from "ajv";
 import { chromium } from "playwright";
@@ -262,12 +261,7 @@ export class BrowserRuntime {
       if (!context.pages().length) this.registerPage(await context.newPage());
       await Promise.all([...this.pages.values()].map((record) => record.ready));
       if (this.config.cdp) {
-        const lines = (await fs.readFile(path.join(directory, "DevToolsActivePort"), "utf8")).trim().split(/\r?\n/);
-        const port = Number(lines[0]);
-        if (!Number.isInteger(port) || port < 1 || port > 65535 || !/^\/devtools\/browser\/[a-z0-9-]+$/i.test(lines[1])) {
-          throw new Error("Chrome did not report a valid managed debugging endpoint.");
-        }
-        this.endpoint = "ws://127.0.0.1:" + port + lines[1];
+        this.endpoint = await readManagedEndpoint(directory, { isAlive: () => this.context === context });
       }
       return context;
     } catch (error) { await this.closeBrowser(); throw error; }
