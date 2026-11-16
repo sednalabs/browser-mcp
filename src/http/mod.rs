@@ -445,10 +445,12 @@ mod tests {
                         variant["properties"]["browser_session_id"]["pattern"],
                         json!("^b_[0-9a-f]{32}$")
                     );
-                    assert!(variant["required"]
-                        .as_array()
-                        .unwrap()
-                        .contains(&json!("browser_session_id")));
+                    assert!(
+                        variant["required"]
+                            .as_array()
+                            .unwrap()
+                            .contains(&json!("browser_session_id"))
+                    );
                 }
             }
             if value["name"] != "browser_session" {
