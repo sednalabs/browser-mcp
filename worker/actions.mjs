@@ -3,7 +3,7 @@
 // Actions and locator selection are adapted from Sedna's Playwright provider;
 // lifecycle, cancellation and input cleanup belong to this long-lived worker.
 import { Rejected } from "./operation.mjs";
-import { evaluateRead, geometryDOM, sameGeometry } from "./dom.mjs";
+import { evaluateRead, geometryDOM, sameGeometry, sendBounded } from "./dom.mjs";
 
 const SPECIAL_KEYS = new Set([
   "Alt", "AltGraph", "Control", "ControlOrMeta", "Meta", "Shift", "Enter", "Return",
@@ -98,6 +98,42 @@ export async function assertObservation(record, observationId) {
   }
 }
 
+// Stop a pending document load on cancellation, but never release the action
+// queue by merely racing away from the original Playwright promise. A genuinely
+// unresponsive browser still reaches the host's existing retirement boundary.
+export async function runNavigation(page, operation, execute) {
+  operation.check();
+  const session = await page.context().newCDPSession(page);
+  let stopPromise = null;
+  const stop = () => {
+    stopPromise ??= sendBounded(session, "Page.stopLoading", {}, 2000).then(
+      () => null, error => error,
+    );
+    return stopPromise;
+  };
+  const abort = () => { void stop(); };
+  const signal = operation.controller.signal;
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    operation.check();
+    try {
+      await execute();
+      operation.check();
+    } catch (error) {
+      const stopError = await stop();
+      if (stopError) {
+        error.message += " Navigation stop could not be confirmed; effects remain uncertain.";
+      }
+      throw error;
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    // No late stop command may leak into a subsequent operation.
+    if (stopPromise) await stopPromise;
+    await session.detach().catch(() => {});
+  }
+}
+
 export async function runAction(record, action, operation, state, options) {
   operation.check();
   const page = record.page;
@@ -105,10 +141,10 @@ export async function runAction(record, action, operation, state, options) {
   const locator = action.target ? locatorFor(page, action.target) : null;
   if (actionUsesCoordinates(action)) await assertObservation(record, options.observationId);
   switch (action.type) {
-    case "navigate": await page.goto(validateUrl(action.url), { waitUntil: "domcontentloaded", timeout }); break;
-    case "back": await page.goBack({ waitUntil: "domcontentloaded", timeout }); break;
-    case "forward": await page.goForward({ waitUntil: "domcontentloaded", timeout }); break;
-    case "reload": await page.reload({ waitUntil: "domcontentloaded", timeout }); break;
+    case "navigate": await runNavigation(page, operation, () => page.goto(validateUrl(action.url), { waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "back": await runNavigation(page, operation, () => page.goBack({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "forward": await runNavigation(page, operation, () => page.goForward({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "reload": await runNavigation(page, operation, () => page.reload({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
     case "click": {
       const button = action.button || "left";
       const ownedModifiers = (action.modifiers || []).map(actualKey).filter((key) => !state.keys.has(key));

@@ -74,6 +74,7 @@
     "worker/schemas.mjs",
     "worker/tests/config.test.mjs",
     "worker/tests/http-profile.test.mjs",
+    "worker/tests/navigation.test.mjs",
     "worker/tests/runtime.test.mjs",
     "worker/tools.json"
   ]
