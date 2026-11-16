@@ -1078,7 +1078,7 @@
   },
   {
     "name": "browser_tabs",
-    "description": "List, create, select or close tabs in this browser session. IDs include the session generation; stale IDs are rejected. Listing includes exact Chrome target IDs for diagnostic integration. new/select return a fresh inline screenshot; creating a page defaults to about:blank.",
+    "description": "Manage tabs in this browser session: {action:\"list\"}; {action:\"new\",url?:string}; {action:\"select\",page_id:string}; {action:\"close\",page_id:string}. Only new accepts url (1–8000 characters, default about:blank). Select and close require an exact page_id (1–100 characters) returned by this session; stale IDs are rejected. Listing includes exact Chrome target IDs for diagnostic integration. New/select return a fresh inline screenshot.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": true,
@@ -1087,86 +1087,71 @@
     },
     "inputSchema": {
       "type": "object",
-      "properties": {
-        "action": {
-          "enum": [
-            "list",
-            "new",
-            "select",
-            "close"
-          ]
-        },
-        "page_id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "url": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 8000
-        }
-      },
-      "required": [
-        "action"
-      ],
-      "additionalProperties": false,
-      "allOf": [
+      "oneOf": [
         {
-          "if": {
-            "properties": {
-              "action": {
-                "enum": [
-                  "select",
-                  "close"
-                ]
-              }
+          "type": "object",
+          "properties": {
+            "action": {
+              "const": "list"
             }
           },
-          "then": {
-            "required": [
-              "page_id"
-            ]
-          }
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
         },
         {
-          "if": {
-            "properties": {
-              "action": {
-                "enum": [
-                  "list",
-                  "new"
-                ]
-              }
+          "type": "object",
+          "properties": {
+            "action": {
+              "const": "new"
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
             }
           },
-          "then": {
-            "not": {
-              "required": [
-                "page_id"
-              ]
-            }
-          }
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
         },
         {
-          "if": {
-            "properties": {
-              "action": {
-                "enum": [
-                  "list",
-                  "select",
-                  "close"
-                ]
-              }
+          "type": "object",
+          "properties": {
+            "action": {
+              "const": "select"
+            },
+            "page_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             }
           },
-          "then": {
-            "not": {
-              "required": [
-                "url"
-              ]
+          "required": [
+            "action",
+            "page_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "const": "close"
+            },
+            "page_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             }
-          }
+          },
+          "required": [
+            "action",
+            "page_id"
+          ],
+          "additionalProperties": false
         }
       ]
     }

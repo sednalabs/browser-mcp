@@ -1,6 +1,7 @@
 // Real Rust HTTP host + local OIDC/JWKS issuer + real Chromium. No public service
 // or credential is required. These tests intentionally fail when not built.
 import test from 'node:test';
+import Ajv from 'ajv';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
@@ -152,6 +153,18 @@ test('HTTP authenticates, isolates leases, and preserves real browser state acro
     assert.equal((await host.request('alice','tools/list',{}, {audience:'https://other.invalid/mcp'})).status,401);
     assert.ok([401,403].includes((await host.request('alice','tools/list',{}, {claims:{scope:'other:scope'}})).status));
     assert.ok([400,403].includes((await host.request('alice','tools/list',{}, {headers:{origin:'https://hostile.invalid'}})).status));
+  });
+  await t.test('advertises closed tab variants with mandatory application lease routing', async()=>{
+    const catalog = await host.request('alice','tools/list');
+    const schema = catalog.value.result.tools.find(tool=>tool.name==='browser_tabs').inputSchema;
+    const validate = new Ajv({strict:false}).compile(schema);
+    const lease = 'b_' + '1'.repeat(32);
+    for (const args of [{action:'list'}, {action:'new',url:'about:blank'}, {action:'select',page_id:'s:p1'}, {action:'close',page_id:'s:p1'}]) {
+      assert.equal(validate({...args,browser_session_id:lease}),true,JSON.stringify(validate.errors));
+      assert.equal(validate(args),false);
+      assert.equal(validate({...args,browser_session_id:'invalid'}),false);
+      assert.equal(validate({...args,browser_session_id:lease,extra:true}),false);
+    }
   });
   let id, observation;
   await t.test('requires explicit handles and returns real inline PNG blocks',async()=>{

@@ -85,6 +85,7 @@
     "worker/tests/navigation.test.mjs",
     "worker/tests/reading.test.mjs",
     "worker/tests/runtime.test.mjs",
+    "worker/tests/tabs-schema.test.mjs",
     "worker/tools.json"
   ]
 }
