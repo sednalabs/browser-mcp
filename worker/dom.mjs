@@ -29,7 +29,7 @@ export function inspectDOM({ limit = 24, semantic } = {}) {
     if (role === "textbox" || element.tagName === "SELECT" || element.isContentEditable) {
       return compact(element.getAttribute("placeholder") || element.getAttribute("title") || element.getAttribute("name") || element.id);
     }
-    return compact(element.innerText || element.textContent || element.getAttribute("alt") || element.getAttribute("title"));
+    return compact(element.textContent || element.innerText || element.getAttribute("alt") || element.getAttribute("title"));
   }
   function summarize(element) {
     if (element.closest("[hidden],[inert],[aria-hidden='true']")) return null;

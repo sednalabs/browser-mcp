@@ -212,3 +212,22 @@ test("diagnostics scope navigation and origin, redact URLs, and advance filtered
   assert.equal(secondPage.coverage.complete, true);
   history.dispose();
 });
+
+test("action validation reports the selected union branch without running earlier actions", async t => {
+  const runtime = new BrowserRuntime(await loadConfig({}));
+  t.after(() => runtime.dispose());
+  const cases = [
+    [{ type: "wait_for", target: { css: "#ready" }, state: "visible", timeout_ms: 30000 }, /timeout_ms must be <= 5000/],
+    [{ type: "scroll", delta_y: 20000 }, /delta_y must be <= 6000/],
+    [{ type: "fill", target: { css: "#ready" } }, /required property 'text'/],
+    [{ type: "not-an-action" }, /unsupported action type/],
+  ];
+  let id = 0;
+  for (const [action, pattern] of cases) {
+    const result = JSON.parse((await runtime.call(++id, "browser_step", { actions: [{ type: "navigate", url: "https://example.com" }, action] })).content[0].text);
+    assert.equal(result.status, "rejected");
+    assert.match(result.error.message, pattern);
+    assert.doesNotMatch(result.error.message, /required property 'url'/);
+    assert.equal(runtime.status().profile_reserved, false);
+  }
+});

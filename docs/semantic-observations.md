@@ -38,3 +38,7 @@ screenshots and action receipts, with warnings rather than false coherence.
 
 w18843 separately owns bounded page text and image selection. This change does
 not implement that feature or claim complete browser accessibility coverage.
+
+## Action validation follow-up (w18956)
+
+Condition waits use `{"type":"wait_for","target":{"css":"#ready"},"state":"visible","timeout_ms":5000}`. The timeout bound is 100..5000 ms, not 30 seconds. Invalid action batches report the selected action variant's error rather than the first `navigate` union error, and still perform no actions. Current source accepts wait_for; reports without installed version or full arguments cannot establish a deployed schema mismatch. Hosted MCP regression exercises navigate followed by an exact-role wait. The compact map now preserves underlying text casing rather than CSS text-transform output for exact-name locators; complex accessible names remain approximate.

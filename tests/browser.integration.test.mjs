@@ -47,7 +47,7 @@ test('modern MCP controls a continuous real browser with typed images and honest
   let page;
   let latest;
   await t.test('navigates and returns an inline screenshot with correct image geometry', async () => {
-    const result = await client.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }] });
+    const result = await client.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }, { type: 'wait_for', target: { role: 'heading', name: 'Sedna Browser MCP', exact: true }, state: 'visible', timeout_ms: 5000 }] });
     latest = successful(result);
     images(result);
     pageId = latest.page_id;
@@ -380,7 +380,7 @@ test('two MCP owners have independent live browser instances and default state',
   const first = new McpClient();
   const second = new McpClient();
   t.after(async () => { await first.close(); await second.close(); await fixture.close(); });
-  const a = successful(await first.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }] }));
+  const a = successful(await first.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }, { type: 'wait_for', target: { role: 'heading', name: 'Sedna Browser MCP', exact: true }, state: 'visible', timeout_ms: 5000 }] }));
   const b = successful(await second.call('browser_observe'));
   assert.notEqual(a.browser_instance_id, b.browser_instance_id);
   assert.notEqual(a.page_id, b.page_id);

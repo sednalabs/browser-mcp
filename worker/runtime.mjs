@@ -146,7 +146,18 @@ export class BrowserRuntime {
       const validate = validators.get(method);
       if (!validate) throw new Rejected("Unknown browser method.", "UNKNOWN_METHOD");
       if (!validate(params)) {
-        const message = validate.errors.slice(0, 4).map((error) => error.instancePath + " " + error.message).join("; ");
+        let errors = validate.errors;
+        if (method === "browser_step" && Array.isArray(params.actions)) {
+          const variants = tools.find(tool => tool.name === method).inputSchema.properties.actions.items.oneOf;
+          errors = errors.filter(error => {
+            const match = error.schemaPath.match(/^#\/properties\/actions\/items\/oneOf\/(\d+)\//);
+            const actionIndex = error.instancePath.match(/^\/actions\/(\d+)/)?.[1];
+            if (!match || actionIndex === undefined) return error.keyword !== "oneOf";
+            return variants[Number(match[1])].properties.type.const === params.actions[Number(actionIndex)]?.type;
+          });
+          if (!errors.length) errors = [{ instancePath: "/actions", message: "contains an unsupported action type; use a type from the advertised action catalogue" }];
+        }
+        const message = errors.slice(0, 4).map((error) => error.instancePath + " " + error.message).join("; ");
         throw new Rejected("Invalid arguments: " + message);
       }
       if (method === "browser_step") validateActions(params.actions, params);
