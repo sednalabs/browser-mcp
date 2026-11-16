@@ -222,7 +222,6 @@ try {
   assert.equal(apiFailure, undefined, apiFailure?.message);
   assert.equal(exit.code, 0, `Codex CLI exited ${exit.code ?? exit.signal}: ${stderr.replaceAll(fakeKey, '[redacted]').slice(-1200)}`);
   assert.equal(requestCount, 5, 'Expected navigation, same-session resize, text-only read, rich screenshot observation and final response.');
-  process.stdout.write('Codex 0.163.0 stdio journey passed: tool discovered, typed PNG forwarded, same page/session resized to 390x844, bounded reading without pixels, then rich semantics/reading/geometry with native PNG.\n');
 } finally {
   if (codex && codex.exitCode === null && codex.signalCode === null) {
     codex.kill('SIGTERM');
@@ -233,5 +232,10 @@ try {
     await new Promise(resolve => api.close(resolve));
   }
   if (fixture) await fixture.close();
-  await rm(tmpRoot, { recursive: true, force: true });
+  // The released consumer can finish while its temporary plugin clone is
+  // settling. Retry only Node's transient recursive-removal errors, up to
+  // 10 retries with 100ms linear backoff; persistent failure still fails proof.
+  await rm(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
+
+process.stdout.write('Codex 0.163.0 stdio journey passed: tool discovered, typed PNG forwarded, same page/session resized to 390x844, bounded reading without pixels, then rich semantics/reading/geometry with native PNG.\n');
