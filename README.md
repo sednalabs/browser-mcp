@@ -5,11 +5,11 @@ the resulting screenshot, and continue in the same browser. A Rust/RMCP host
 supervises the existing Node/Playwright runtime. Both local stdio and
 authenticated Streamable HTTP/HTTPS use that same worker implementation.
 
-**HTTP candidate status:** implementation and tests are present, but this
-revision has not been compiled or tested over HTTP in its authoring environment.
-The container has no Rust toolchain/package access. Only the recorded
-JavaScript/schema checks passed here. See [current validation](docs/validation-current.md).
-No GitHub repository or PR has been created by this archive.
+**Validation:** this repository has hosted Rust, worker and compiled MCP checks.
+See the [latest CI runs](https://github.com/sednalabs/browser-mcp/actions/workflows/ci.yml)
+for the exact revision under test. Historical authoring-environment limits in
+[validation notes](docs/validation-current.md) are not current deployment proof.
+A passing fixture suite does not by itself qualify an installed consumer or service deployment.
 
 ## Get started
 
@@ -22,8 +22,7 @@ npm run setup
 node scripts/start.mjs --check
 ```
 
-The pending HTTP lockfile is regenerated explicitly during setup. The final
-release build then uses `--locked`. Install Linux browser system libraries
+The committed lockfile is used by locked release builds. Install Linux browser system libraries
 with `npx playwright install --with-deps chromium` when necessary.
 
 Stdio remains the default:
@@ -100,7 +99,14 @@ appropriately isolated environment. The optional CDP endpoint stays private.
 
 The initial server retains stdio compatibility for MCP 2025-11-25 and targets
 MCP 2026-07-28 via the maintained RMCP 3.5.1 source. Version support is not a
-claim that this HTTP candidate has already passed its required integration tests.
+substitute for exact-revision integration and deployment verification.
+
+## Reading without pixels
+
+`browser_observe` and `browser_step` accept `reading: {max_chars: 8000,
+max_blocks: 64, root_css: "main"}` for bounded readable text alongside the default
+native MCP screenshot. Use `screenshot: false` to skip screenshot capture;
+reading is then enabled by default. See [reading coverage and freshness](docs/reading.md).
 
 ### Bounded element geometry
 

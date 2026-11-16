@@ -21,6 +21,7 @@
     "docs/operations.md",
     "docs/protocol.md",
     "docs/provenance.md",
+    "docs/reading.md",
     "docs/semantic-observations.md",
     "docs/validation-current.md",
     "docs/validation.md",
@@ -73,6 +74,7 @@
     "worker/main.mjs",
     "worker/modal.mjs",
     "worker/operation.mjs",
+    "worker/reading.mjs",
     "worker/runtime.mjs",
     "worker/schemas.mjs",
     "worker/tests/cdp-endpoint.test.mjs",
@@ -81,6 +83,7 @@
     "worker/tests/element-geometry.test.mjs",
     "worker/tests/http-profile.test.mjs",
     "worker/tests/navigation.test.mjs",
+    "worker/tests/reading.test.mjs",
     "worker/tests/runtime.test.mjs",
     "worker/tools.json"
   ]

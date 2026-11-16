@@ -389,3 +389,81 @@ test("optional semantics preserve inline image, bounded hierarchy and fresh expa
   assert.equal(textOf(badRoot).actionable, false);
   assert.equal(textOf(badRoot).page, undefined);
 });
+
+test("bounded reading and text-only observation preserve receipts and invalidate pixels", async (t) => {
+  const server = await fixture(); t.after(server.close);
+  const runtime = await makeRuntime(t);
+  const initial = textOf(await runtime.call("reading-nav", "browser_step", { actions: [{ type: "navigate", url: server.origin }] }));
+  const record = runtime.pages.get(initial.page_id);
+  await record.page.setContent('<main><h1>Article title</h1><p>Hello <b>reader</b>.<br>Next line.</p><a href="https://example.com/">Source</a><input value="private-card"><textarea>private-draft</textarea><p hidden>hidden-secret</p><details><summary>Public summary</summary><p id="collapsed">collapsed-secret</p></details></main>');
+  const pixels = textOf(await runtime.call("reading-pixels", "browser_observe", {}));
+  const originalScreenshot = record.page.screenshot.bind(record.page);
+  record.page.screenshot = async () => { throw new Error("text-only must not capture"); };
+  const result = await runtime.call("reading-text", "browser_observe", { screenshot: false, reading: { max_chars: 100, max_blocks: 4 }, semantic: {}, element_geometry: { selectors: ["h1"] } });
+  const data = textOf(result);
+  assert.equal(result.isError, undefined);
+  assert.equal(imagesOf(result).length, 0);
+  assert.equal(data.screenshot_captured, false);
+  assert.equal(data.actionable, false);
+  assert.equal(data.geometry, undefined);
+  assert.equal(data.element_geometry.observation_id, data.observation_id);
+  assert.equal(data.element_geometry.page_id, data.page_id);
+  assert.equal(data.element_geometry.consistency, "single_bounded_read_not_atomic_with_other_sections");
+  assert.equal(data.reading.coverage.continuation, false);
+  assert.ok(data.reading.coverage.returned_chars <= 100);
+  assert.ok(data.reading.blocks.length <= 4);
+  assert.match(JSON.stringify(data.reading), /Article title/);
+  assert.doesNotMatch(JSON.stringify(data.reading), /private-card|private-draft|hidden-secret/);
+  for (const id of [pixels.observation_id, data.observation_id]) {
+    const stale = textOf(await runtime.call("reading-stale-" + id, "browser_step", { observation_id: id, screenshot: false, actions: [{ type: "click", x: 1, y: 1 }] }));
+    assert.equal(stale.status, "rejected");
+    assert.equal(stale.actions[0].status, "not_started");
+  }
+  const collapsed = textOf(await runtime.call("reading-collapsed", "browser_observe", { screenshot: false, reading: { root_css: "#collapsed" } }));
+  assert.equal(collapsed.reading.unavailable, "root_not_readable");
+  const details = textOf(await runtime.call("reading-details", "browser_observe", { screenshot: false, reading: {} }));
+  assert.match(JSON.stringify(details.reading), /Public summary/);
+  assert.doesNotMatch(JSON.stringify(details.reading), /collapsed-secret/);
+  const partial = textOf(await runtime.call("reading-partial", "browser_step", { screenshot: false, actions: [{ type: "fill", target: { css: "input" }, text: "changed" }, { type: "click", target: { css: "#missing" } }] }));
+  assert.equal(partial.status, "failed");
+  assert.equal(partial.actions[0].status, "completed");
+  assert.equal(partial.actions[1].status, "uncertain");
+  assert.equal(partial.screenshot_captured, false);
+  await record.page.locator("h1").evaluate(el => { el.textContent = "New article"; });
+  const fresh = textOf(await runtime.call("reading-fresh", "browser_observe", { screenshot: false, reading: { root_css: "h1" } }));
+  assert.match(JSON.stringify(fresh.reading), /New article/);
+  assert.doesNotMatch(JSON.stringify(fresh.reading), /Article title/);
+  assert.notEqual(fresh.observation_id, data.observation_id);
+  record.page.screenshot = originalScreenshot;
+  const withPixels = await runtime.call("reading-default", "browser_observe", { reading: {} });
+  assert.equal(imagesOf(withPixels).length, 1);
+  assert.equal(textOf(withPixels).screenshot_captured, true);
+  assert.match(JSON.stringify(textOf(withPixels).reading), /New article/);
+  record.page.screenshot = async options => {
+    const image = await originalScreenshot(options);
+    await record.page.locator('h1').evaluate(el => { el.textContent = 'Changed during capture'; });
+    return image;
+  };
+  const changed = await runtime.call("reading-drift", "browser_step", { reading: {}, actions: [{ type: "fill", target: { css: "input" }, text: "completed-once" }] });
+  assert.equal(textOf(changed).actions[0].status, 'completed');
+  assert.equal(imagesOf(changed).length, 1);
+  assert.equal(textOf(changed).reading, undefined);
+  assert.match(textOf(changed).warnings.join(' '), /Readable content changed/);
+  record.page.screenshot = originalScreenshot;
+  const context = record.page.context();
+  const newSession = context.newCDPSession.bind(context);
+  context.newCDPSession = async page => {
+    const session = await newSession(page);
+    const send = session.send.bind(session);
+    session.send = (method, params) => method === 'Runtime.evaluate' && params.expression.includes('function inspectReadingDOM')
+      ? Promise.reject(new Error('Injected reading failure')) : send(method, params);
+    return session;
+  };
+  const failedRead = await runtime.call("reading-failure", "browser_step", { screenshot: false, actions: [{ type: "fill", target: { css: "input" }, text: "retained-after-read-failure" }] });
+  assert.equal(textOf(failedRead).actions[0].status, 'completed');
+  assert.match(textOf(failedRead).observation_unavailable.message, /Injected reading failure/);
+  assert.equal(imagesOf(failedRead).length, 0);
+  assert.equal(record.lastObservation, null);
+  assert.equal(await record.page.locator('input').inputValue(), 'retained-after-read-failure');
+  context.newCDPSession = newSession;
+});
