@@ -77,6 +77,7 @@
     "worker/reading.mjs",
     "worker/runtime.mjs",
     "worker/schemas.mjs",
+    "worker/tests/capture-recovery.test.mjs",
     "worker/tests/cdp-endpoint.test.mjs",
     "worker/tests/config.test.mjs",
     "worker/tests/element-geometry-browser.test.mjs",

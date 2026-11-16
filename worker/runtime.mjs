@@ -440,7 +440,7 @@ export class BrowserRuntime {
       try { beforeElements = await evaluateRead(record.page, inspectElementGeometry, elementGeometry); }
       catch { /* Optional geometry must not discard action receipts or screenshots. */ }
     }
-    const capture = await captureViewport(record.page, { hasDialog: () => Boolean(record.dialog) });
+    const capture = await captureViewport(record.page, { hasDialog: () => Boolean(record.dialog), navigationEpoch: () => record.navigation });
     const capturedAt = new Date().toISOString();
     let summary;
     const warnings = capture.warnings.map((message) => this.safe(message, 400));
@@ -613,7 +613,7 @@ export class BrowserRuntime {
           ? (await evaluateRead(page, geometryDOM)).document.height : requested.scroll_y;
         if (scrollY !== undefined) await page.evaluate((value) => window.scrollTo(window.scrollX, value), scrollY);
         await operation.sleep(requested.settle_ms ?? 150);
-        const capture = await captureViewport(page, { hasDialog: () => Boolean(record.dialog) });
+        const capture = await captureViewport(page, { hasDialog: () => Boolean(record.dialog), navigationEpoch: () => record.navigation });
         images.push(capture.image);
         captures.push({
           label: requested.label, status: "captured", content_index: images.length,
