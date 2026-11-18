@@ -21,7 +21,20 @@ time, while the worker validates calls from `worker/schemas.mjs`.
 On a root container or Linux environment without usable Chromium user namespaces,
 the default sandbox-enabled launch can fail. Opt into
 `SEDNA_BROWSER_NO_SANDBOX=true` only when that is an intentional property of the
-container. It is not the default in client examples or CI.
+container. It is not the default in client examples. CI sets the override only
+for disposable local-fixture browsers on runners that block user-namespace
+sandboxing; that coverage does not prove a sandbox-enabled launch works there.
+
+When the provider reports `CHROMIUM_SANDBOX_UNAVAILABLE`, it has not disabled
+Chromium's sandbox or retried with weaker flags. On Ubuntu hosts that restrict
+unprivileged user namespaces, prefer a root-owned AppArmor profile allowing
+`userns` for the exact pinned Chromium executable. Keep the executable and its
+parent directories root-owned and non-writable by the MCP account; a profile
+matching an executable under a user-writable package directory does not protect
+against replacement by that user. Avoid wildcard paths and do not disable the
+host-wide `apparmor_restrict_unprivileged_userns` setting. See Chromium's
+[AppArmor user-namespace guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+Do not use `SEDNA_BROWSER_NO_SANDBOX` when browsing the open web.
 
 ## Local configuration
 
@@ -113,3 +126,15 @@ required root files. It excludes `.git`, Cargo targets, npm dependencies,
 The ZIP has one `sedna-browser-mcp/` root and can be used for the first Git commit.
 It is source, not a prebuilt offline runtime; setup requires access to the pinned
 Git/Cargo/npm sources and the browser download origin.
+
+## Navigation cancellation
+
+Navigation actions use the configured action deadline. On cancellation or failure,
+the worker requests `Page.stopLoading` through a dedicated CDP session before
+final observation. It waits for the original navigation promise and the stop
+request to settle; it does not race away from an in-flight mutation, replay the
+action, or classify an interrupted navigation as having no effects. The stop
+request has a two-second deadline that detaches its dedicated session. If the
+browser remains unresponsive, the existing host cancellation grace and worker
+retirement still apply. A later observation can establish current page state,
+not whether an interrupted request had external effects.

@@ -38,6 +38,10 @@ test('modern MCP controls a continuous real browser with typed images and honest
     assert.equal(catalog.result.cacheScope, 'private');
     assert.equal(catalog.result.resultType, 'complete');
     assert.equal(catalog.result.tools.find(tool => tool.name === 'browser_step').annotations.destructiveHint, true);
+    const tabsSchema = catalog.result.tools.find(tool => tool.name === 'browser_tabs').inputSchema;
+    assert.deepEqual(tabsSchema.oneOf.map(branch => branch.properties.action.const), ['list', 'new', 'select', 'close']);
+    assert.equal(tabsSchema.allOf, undefined);
+    assert.deepEqual(tabsSchema.oneOf[2].required, ['action', 'page_id']);
     const status = successful(await client.call('browser_session', { action: 'status' }));
     assert.equal(status.running, false);
     assert.equal(status.browser_instance_id, null);
@@ -47,7 +51,7 @@ test('modern MCP controls a continuous real browser with typed images and honest
   let page;
   let latest;
   await t.test('navigates and returns an inline screenshot with correct image geometry', async () => {
-    const result = await client.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }] });
+    const result = await client.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }, { type: 'wait_for', target: { role: 'heading', name: 'Sedna Browser MCP', exact: true }, state: 'visible', timeout_ms: 5000 }] });
     latest = successful(result);
     images(result);
     pageId = latest.page_id;
@@ -64,6 +68,29 @@ test('modern MCP controls a continuous real browser with typed images and honest
     // A Playwright companion otherwise auto-dismisses native dialogs. This
     // observer must remain passive while the MCP owner exercises dialog input.
     page.on('dialog', () => {});
+  });
+
+  await t.test('delivers bounded reading as text-only MCP content without pixels', async () => {
+    const result = await client.call('browser_observe', { page_id: pageId, screenshot: false, reading: { max_chars: 200, max_blocks: 8 } });
+    const data = successful(result);
+    assert.equal(result.content.filter(block => block.type === 'image').length, 0);
+    assert.equal(data.screenshot_captured, false);
+    assert.equal(data.actionable, false);
+    assert.ok(data.reading.coverage.returned_chars <= 200);
+    assert.equal(data.reading.coverage.continuation, false);
+    const stale = textPayload(await client.call('browser_step', { page_id: pageId, observation_id: data.observation_id, screenshot: false, actions: [{ type: 'click', x: 1, y: 1 }] }));
+    assert.equal(stale.status, 'rejected');
+    latest = successful(await client.call('browser_observe', { page_id: pageId }));
+  });
+
+  await t.test('delivers optional bounded semantic content with a native MCP image', async () => {
+    const result = await client.call('browser_observe', { page_id: pageId, semantic: {} });
+    latest = successful(result);
+    images(result);
+    assert.equal(latest.page.accessibility.observation_id, latest.observation_id);
+    assert.ok(latest.page.accessibility.nodes.some(node => node.name === 'Unsaved draft'));
+    assert.ok(latest.page.accessibility.nodes.some(node => node.role === 'heading'));
+    assert.ok(JSON.stringify(latest.page.accessibility).length < 60000);
   });
 
   await t.test('keeps an open menu, unsaved input, focus and the same loaded document across observe calls', async () => {
@@ -280,6 +307,64 @@ test('modern MCP controls a continuous real browser with typed images and honest
     assert.equal(await page.evaluate(() => window.fixture.count), count);
   });
 
+  await t.test('browser_inspect scopes diagnostics and never exposes URL query or fragment values', async () => {
+    const otherOrigin = await fixtureServer();
+    try {
+      const priorUrl = new URL(fixture.url);
+      priorUrl.search = '?token=prior-page-secret';
+      priorUrl.hash = '#prior-page-fragment';
+      successful(await client.call('browser_step', { page_id: pageId, actions: [{ type: 'navigate', url: priorUrl.toString() }] }));
+      await page.evaluate(async () => {
+        console.error('prior URL https://diagnostic.invalid/page?token=prior-console-secret#prior-console-fragment');
+        await fetch('/api/old?token=prior-request-secret#prior-request-fragment');
+      });
+      const prior = successful(await client.call('browser_inspect', { page_id: pageId, scope: 'current_navigation', limit: 200 }));
+      assert.ok(prior.events.some(event => event.kind === 'network' && event.url.endsWith('/api/old')));
+
+      const currentUrl = new URL(fixture.url);
+      currentUrl.pathname = '/current-navigation';
+      currentUrl.search = '?token=current-navigation-secret';
+      currentUrl.hash = '#current-navigation-fragment';
+      successful(await client.call('browser_step', { page_id: pageId, actions: [{ type: 'navigate', url: currentUrl.toString() }] }));
+      await page.evaluate(async foreignUrl => {
+        console.error('current URL ' + location.href);
+        await fetch('/api/check?token=current-request-secret#current-request-fragment', { method: 'POST' });
+        const image = new Image();
+        image.src = foreignUrl + '?token=foreign-origin-secret#foreign-origin-fragment';
+        document.body.append(image);
+        await new Promise(resolve => { image.onload = resolve; image.onerror = resolve; });
+      }, otherOrigin.url);
+
+      const current = successful(await client.call('browser_inspect', { page_id: pageId, scope: 'current_navigation', limit: 200 }));
+      assert.equal(current.scope, 'current_navigation');
+      assert.equal(current.scope_available, true);
+      assert.ok(current.navigation_start_seq > prior.navigation_start_seq);
+      assert.equal(current.url_redaction, 'query_and_fragment_omitted');
+      assert.ok(current.events.some(event => event.kind === 'network' && event.url.endsWith('/api/check')));
+      assert.ok(current.events.some(event => event.kind === 'network' && event.url.startsWith(new URL(otherOrigin.url).origin)));
+      assert.ok(!current.events.some(event => event.kind === 'network' && event.url.endsWith('/api/old')));
+      assert.doesNotMatch(JSON.stringify(current), /prior-page-secret|prior-page-fragment|prior-console-secret|prior-console-fragment|prior-request-secret|prior-request-fragment|current-navigation-secret|current-navigation-fragment|current-request-secret|current-request-fragment|foreign-origin-secret|foreign-origin-fragment/);
+
+      const filtered = successful(await client.call('browser_inspect', {
+        page_id: pageId, scope: 'current_navigation', method: 'post', status: 200, resource_type: 'fetch', limit: 200,
+      }));
+      assert.ok(filtered.events.length > 0);
+      assert.ok(filtered.events.every(event => event.kind === 'network' && event.method === 'POST' && event.status === 200 && event.resource_type === 'fetch'));
+
+      const origin = successful(await client.call('browser_inspect', { page_id: pageId, scope: 'current_origin', limit: 200 }));
+      assert.equal(origin.scope_origin, new URL(fixture.url).origin);
+      assert.ok(!origin.events.some(event => event.kind === 'network' && event.url.startsWith(new URL(otherOrigin.url).origin)));
+      assert.equal(origin.url_redaction, 'query_and_fragment_omitted');
+
+      const recent = successful(await client.call('browser_inspect', { page_id: pageId, scope: 'recent', limit: 200 }));
+      assert.doesNotMatch(JSON.stringify(recent), /prior-page-secret|prior-console-secret|prior-request-secret|current-navigation-secret|current-request-secret|foreign-origin-secret/);
+      assert.equal(recent.next_seq, recent.latest_seq);
+      assert.equal(recent.coverage.mode, 'recent_tail');
+    } finally {
+      await otherOrigin.close();
+    }
+  });
+
   await t.test('survives an optional diagnostic companion disconnect without changing its owner or page', async () => {
     const before = successful(await client.call('browser_session', { action: 'status' }));
     await companion.close();
@@ -312,7 +397,7 @@ test('two MCP owners have independent live browser instances and default state',
   const first = new McpClient();
   const second = new McpClient();
   t.after(async () => { await first.close(); await second.close(); await fixture.close(); });
-  const a = successful(await first.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }] }));
+  const a = successful(await first.call('browser_step', { actions: [{ type: 'navigate', url: fixture.url }, { type: 'wait_for', target: { role: 'heading', name: 'Sedna Browser MCP', exact: true }, state: 'visible', timeout_ms: 5000 }] }));
   const b = successful(await second.call('browser_observe'));
   assert.notEqual(a.browser_instance_id, b.browser_instance_id);
   assert.notEqual(a.page_id, b.page_id);

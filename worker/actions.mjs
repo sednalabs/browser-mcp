@@ -3,7 +3,7 @@
 // Actions and locator selection are adapted from Sedna's Playwright provider;
 // lifecycle, cancellation and input cleanup belong to this long-lived worker.
 import { Rejected } from "./operation.mjs";
-import { evaluateRead, geometryDOM, sameGeometry } from "./dom.mjs";
+import { evaluateRead, geometryDOM, sameGeometry, sendBounded } from "./dom.mjs";
 
 const SPECIAL_KEYS = new Set([
   "Alt", "AltGraph", "Control", "ControlOrMeta", "Meta", "Shift", "Enter", "Return",
@@ -33,6 +33,7 @@ export function actionUsesCoordinates(action) {
 export function validateActions(actions, params) {
   for (const action of actions) {
     if (action.type === "navigate") validateUrl(action.url);
+    if (action.type === "set_files" && action.target.frame) throw new Rejected("File selection supports only a main-frame input.", "FILE_TARGET_UNSUPPORTED");
     if (actionUsesCoordinates(action) && !params.observation_id) {
       throw new Rejected("Coordinate input requires the observation_id from the latest browser_observe or browser_step.", "OBSERVATION_REQUIRED");
     }
@@ -98,6 +99,42 @@ export async function assertObservation(record, observationId) {
   }
 }
 
+// Stop a pending document load on cancellation, but never release the action
+// queue by merely racing away from the original Playwright promise. A genuinely
+// unresponsive browser still reaches the host's existing retirement boundary.
+export async function runNavigation(page, operation, execute) {
+  operation.check();
+  const session = await page.context().newCDPSession(page);
+  let stopPromise = null;
+  const stop = () => {
+    stopPromise ??= sendBounded(session, "Page.stopLoading", {}, 2000).then(
+      () => null, error => error,
+    );
+    return stopPromise;
+  };
+  const abort = () => { void stop(); };
+  const signal = operation.controller.signal;
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    operation.check();
+    try {
+      await execute();
+      operation.check();
+    } catch (error) {
+      const stopError = await stop();
+      if (stopError) {
+        error.message += " Navigation stop could not be confirmed; effects remain uncertain.";
+      }
+      throw error;
+    }
+  } finally {
+    signal.removeEventListener("abort", abort);
+    // No late stop command may leak into a subsequent operation.
+    if (stopPromise) await stopPromise;
+    await session.detach().catch(() => {});
+  }
+}
+
 export async function runAction(record, action, operation, state, options) {
   operation.check();
   const page = record.page;
@@ -105,10 +142,10 @@ export async function runAction(record, action, operation, state, options) {
   const locator = action.target ? locatorFor(page, action.target) : null;
   if (actionUsesCoordinates(action)) await assertObservation(record, options.observationId);
   switch (action.type) {
-    case "navigate": await page.goto(validateUrl(action.url), { waitUntil: "domcontentloaded", timeout }); break;
-    case "back": await page.goBack({ waitUntil: "domcontentloaded", timeout }); break;
-    case "forward": await page.goForward({ waitUntil: "domcontentloaded", timeout }); break;
-    case "reload": await page.reload({ waitUntil: "domcontentloaded", timeout }); break;
+    case "navigate": await runNavigation(page, operation, () => page.goto(validateUrl(action.url), { waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "back": await runNavigation(page, operation, () => page.goBack({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "forward": await runNavigation(page, operation, () => page.goForward({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
+    case "reload": await runNavigation(page, operation, () => page.reload({ waitUntil: "domcontentloaded", timeout: operation.timeout(options.actionTimeout) })); break;
     case "click": {
       const button = action.button || "left";
       const ownedModifiers = (action.modifiers || []).map(actualKey).filter((key) => !state.keys.has(key));
@@ -132,6 +169,27 @@ export async function runAction(record, action, operation, state, options) {
     case "hover": {
       if (locator) await locator.hover({ timeout });
       else { const point = await coordinatePoint(page, action); await page.mouse.move(point.x, point.y); }
+      break;
+    }
+    case "set_files": {
+      const element = await locator.elementHandle({ timeout });
+      if (!element) throw new Rejected("File input was not found.", "FILE_TARGET_NOT_FOUND");
+      let payloads;
+      try {
+        const frame = await element.ownerFrame();
+        if (frame !== page.mainFrame()) throw new Rejected("File selection supports only a main-frame input.", "FILE_TARGET_UNSUPPORTED");
+        const input = await element.evaluate(el => ({ tag: el.tagName, type: el.type, multiple: el.multiple, connected: el.isConnected }));
+        if (!input.connected || input.tag !== "INPUT" || input.type !== "file") throw new Rejected("Target must be a connected file input.", "FILE_TARGET_UNSUPPORTED");
+        if (!input.multiple && action.handles.length > 1) throw new Rejected("Target does not allow multiple files.", "FILE_TARGET_MULTIPLE");
+        payloads = options.fileGrants.prepare(action.handles, new URL(frame.url()).origin);
+        operation.check();
+        // The same resolved element is used after origin validation. Choosing
+        // files can immediately transmit bytes in change handlers. Never retry.
+        await element.setInputFiles(payloads, { timeout: operation.timeout(options.actionTimeout) });
+      } finally {
+        for (const payload of payloads || []) payload.buffer.fill(0);
+        await element.dispose().catch(() => {});
+      }
       break;
     }
     case "fill": await locator.fill(action.text, { timeout }); break;

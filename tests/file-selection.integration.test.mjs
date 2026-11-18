@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import http from 'node:http';
+import { once } from 'node:events';
+import { McpClient, successful, textPayload, images } from './support/mcp-client.mjs';
+
+test('compiled MCP file selection uses only granted snapshots and returns typed receipts', { timeout: 30000 }, async t => {
+  const directory = await fs.mkdtemp(path.join(process.cwd(), '.browser-file-mcp-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<input id="upload" type="file"><p id="result">Nothing selected</p><script>document.querySelector("input").onchange=async e=>{document.querySelector("#result").textContent=await e.target.files[0].text();};</script>'); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const file = path.join(directory, 'fictional.txt'), config = path.join(directory, 'browser.json');
+  await fs.writeFile(file, 'Disposable fictional file bytes');
+  await fs.writeFile(config, JSON.stringify({ file_grants: [{ path: file, allowed_origins: [origin] }] }), { mode: 0o600 });
+  const client = new McpClient({ env: { SEDNA_BROWSER_CONFIG: config } }); t.after(() => client.close());
+  const status = successful(await client.call('browser_session', { action: 'status' }));
+  assert.equal(status.file_grants.length, 1); assert.ok(!JSON.stringify(status).includes(directory));
+  const handle = status.file_grants[0].handle;
+  await fs.writeFile(file, 'Later file replacement');
+  const result = await client.call('browser_step', { actions: [{ type: 'navigate', url: origin }, { type: 'set_files', target: { css: '#upload' }, handles: [handle] }], reading: {} });
+  const selected = successful(result); images(result);
+  assert.equal(selected.actions[1].status, 'completed');
+  assert.match(JSON.stringify(selected.reading), /Disposable fictional file bytes/);
+  assert.doesNotMatch(JSON.stringify(selected.reading), /Later file replacement/);
+  const other = new McpClient({ env: { SEDNA_BROWSER_CONFIG: config } }); t.after(() => other.close());
+  const crossWorker = textPayload(await other.call('browser_step', { actions: [{ type: 'navigate', url: origin }, { type: 'set_files', target: { css: '#upload' }, handles: [handle] }] }));
+  assert.equal(crossWorker.status, 'rejected');
+  assert.equal(crossWorker.session.running, false);
+  await client.call('browser_session', { action: 'close' });
+  const revoked = textPayload(await client.call('browser_step', { actions: [{ type: 'set_files', target: { css: '#upload' }, handles: [handle] }] }));
+  assert.equal(revoked.status, 'rejected');
+});

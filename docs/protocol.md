@@ -2,10 +2,10 @@
 
 ## Public transport
 
-The public MCP transport is newline-delimited JSON-RPC on stdin/stdout, provided
-by RMCP through the toolkit's stdio builder. Server diagnostics go to stderr.
-There is no separate HTTP listener and no browser-launch side effect in tool
-discovery.
+Local stdio MCP uses newline-delimited JSON-RPC on stdin/stdout through the
+toolkit's RMCP builder; diagnostics go to stderr. The host also supports an
+optional authenticated Streamable HTTP listener with explicit application leases;
+see [HTTP ownership and setup](http.md). Tool discovery does not launch a browser.
 
 The target is [MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28),
 whose current mode uses per-request version/client metadata and `server/discover`.

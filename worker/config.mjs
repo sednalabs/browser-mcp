@@ -2,13 +2,15 @@
 // Adapted and modified from Sedna/OpenAI Codex; see NOTICE and docs/provenance.md.
 // Local operator configuration is read once, before accepting any browser calls.
 import fs from "node:fs/promises";
+import { constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { loadFileGrants, verifyTrustedGrantConfig } from "./file-grants.mjs";
 import { randomUUID } from "node:crypto";
 
 const CONFIG_KEYS = new Set([
   "profile", "executable", "headless", "cdp", "no_sandbox", "viewport",
-  "service_auth", "action_timeout_ms", "operation_timeout_ms",
+  "service_auth", "file_grants", "action_timeout_ms", "operation_timeout_ms",
 ]);
 const FORBIDDEN_HEADERS = /^(host|cookie|set-cookie|content-length|connection|transfer-encoding|proxy-.*|sec-.*|origin|referer)$/i;
 
@@ -21,14 +23,29 @@ export function booleanSetting(value, fallback, name) {
 
 async function readPrivateJson(filename) {
   const resolved = path.resolve(filename);
-  const stat = await fs.lstat(resolved);
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Configuration must be a regular file.");
-  if (stat.size > 65536) throw new Error("Configuration exceeds 64 KiB.");
-  if (process.platform !== "win32") {
-    if (stat.uid !== process.getuid()) throw new Error("Configuration must belong to the current user.");
-    if (stat.mode & 0o022) throw new Error("Configuration must not be writable by group or other users.");
-  }
-  return JSON.parse(await fs.readFile(resolved, "utf8"));
+  let fd, bytes;
+  try {
+    const before = await fs.lstat(resolved, { bigint: true });
+    if (!before.isFile() || before.isSymbolicLink() || before.size > 65536n) throw new Error("invalid");
+    fd = await fs.open(resolved, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
+    const stat = await fd.stat({ bigint: true });
+    if (!stat.isFile() || stat.ino !== before.ino || stat.dev !== before.dev || stat.size > 65536n) throw new Error("invalid");
+    if (process.platform !== "win32" && (stat.uid !== BigInt(process.getuid()) || (stat.mode & 0o022n))) throw new Error("invalid");
+    bytes = Buffer.alloc(65537);
+    let count = 0;
+    while (count < bytes.length) {
+      const read = await fd.read(bytes, count, bytes.length - count, count);
+      if (!read.bytesRead) break;
+      count += read.bytesRead;
+    }
+    const after = await fd.stat({ bigint: true });
+    if (count > 65536 || BigInt(count) !== stat.size || stat.size !== after.size || stat.mtimeNs !== after.mtimeNs || stat.ctimeNs !== after.ctimeNs) throw new Error("changed");
+    try { return JSON.parse(bytes.subarray(0, count).toString("utf8")); }
+    catch { throw new Error("Configuration must contain valid JSON."); }
+  } catch (error) {
+    if (error.message === "Configuration must contain valid JSON.") throw error;
+    throw new Error("Configuration must be an unchanged current-user-owned regular file, at most 64 KiB and not writable by group or other users.");
+  } finally { bytes?.fill(0); await fd?.close().catch(() => {}); }
 }
 
 export function parseServiceAuth(value, env = process.env) {
@@ -87,6 +104,9 @@ export async function loadConfig(env = process.env) {
   const operationTimeout = file.operation_timeout_ms ?? 60000;
   if (!Number.isInteger(actionTimeout) || actionTimeout < 100 || actionTimeout > 5000) throw new Error("action_timeout_ms must be 100..5000.");
   if (!Number.isInteger(operationTimeout) || operationTimeout < 1000 || operationTimeout > 90000) throw new Error("operation_timeout_ms must be 1000..90000.");
+  if (file.file_grants !== undefined && !booleanSetting(env.SEDNA_BROWSER_HTTP_WORKER, false, "HTTP worker")) {
+    await verifyTrustedGrantConfig(env.SEDNA_BROWSER_CONFIG);
+  }
   const auth = env.SEDNA_BROWSER_AUTH_FILE ? await readPrivateJson(env.SEDNA_BROWSER_AUTH_FILE) : file.service_auth;
   return Object.freeze({
     profile,
@@ -98,6 +118,7 @@ export async function loadConfig(env = process.env) {
     actionTimeout,
     operationTimeout,
     serviceAuth: parseServiceAuth(auth, env),
+    fileGrants: await loadFileGrants(file.file_grants, booleanSetting(env.SEDNA_BROWSER_HTTP_WORKER, false, "HTTP worker")),
   });
 }
 

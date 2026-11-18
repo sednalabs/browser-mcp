@@ -24,13 +24,28 @@ export function imageDimensions(buffer) {
   throw new Error("Unsupported or malformed screenshot image.");
 }
 
-export async function captureViewport(page, { hasDialog = () => false } = {}) {
+export async function captureViewport(page, { hasDialog = () => false, navigationEpoch = () => null } = {}) {
   const assertNoDialog = () => {
     if (hasDialog()) throw new Error("A native JavaScript dialog blocks reliable current-frame capture. Resolve it with browser_step dialog accept/dismiss; the dialog text is reported separately.");
   };
   assertNoDialog();
   const warnings = [];
-  const before = await evaluateRead(page, geometryDOM);
+  let recoveryUsed = false;
+  const readGeometry = async () => {
+    const epoch = navigationEpoch();
+    try { return await evaluateRead(page, geometryDOM); }
+    catch (error) {
+      // Retry only this read, after a committed main-frame navigation. The
+      // original CDP read is settled/detached before another one can start.
+      // One extra bounded read per capture; never replay input or screenshots.
+      if (recoveryUsed || epoch === null || epoch === navigationEpoch() || page.isClosed() || hasDialog()) throw error;
+      recoveryUsed = true;
+      warnings.push("Capture geometry read interrupted by navigation; retried once without replaying actions or screenshots.");
+      return evaluateRead(page, geometryDOM);
+    }
+  };
+  const before = await readGeometry();
+  const captureEpoch = navigationEpoch();
   let chosen;
   for (const options of [
     { type: "png", scale: "css" },
@@ -61,9 +76,9 @@ export async function captureViewport(page, { hasDialog = () => false } = {}) {
     } finally { await session?.detach().catch(() => {}); }
   }
   assertNoDialog();
-  const after = await evaluateRead(page, geometryDOM);
+  const after = await readGeometry();
   const dimensions = imageDimensions(chosen.buffer);
-  const stableGeometry = before.url === after.url &&
+  const stableGeometry = captureEpoch === navigationEpoch() && before.url === after.url &&
     before.viewport.width === after.viewport.width && before.viewport.height === after.viewport.height &&
     before.scroll.x === after.scroll.x && before.scroll.y === after.scroll.y &&
     before.device_pixel_ratio === after.device_pixel_ratio;
